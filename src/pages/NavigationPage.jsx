@@ -4,8 +4,9 @@ import SafeMap from '../components/map/SafeMap'
 import NavHeader from '../components/navigation/NavHeader'
 import NavBottom from '../components/navigation/NavBottom'
 import DangerModal from '../components/navigation/DangerModal'
+import RouteLayer from '../components/map/RouteLayer'
+import { useRoute } from '../store/RouteContext'
 
-// 시뮬레이션용 단계 데이터
 const NAV_STEPS = [
   { type: 'destination', label: '광운대학교', status: 'safe',    remainMinutes: 7, progress: 10 },
   { type: 'straight',    label: '직진',       status: 'safe',    remainMinutes: 7, progress: 30 },
@@ -16,15 +17,16 @@ const NAV_STEPS = [
 export default function NavigationPage() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { stopNavigation } = useRoute()
+
   const destination = location.state?.destination
 
-  const [stepIndex, setStepIndex]       = useState(0)
-  const [showDanger, setShowDanger]     = useState(false)
-  const [prevStatus, setPrevStatus]     = useState('safe')
+  const [stepIndex, setStepIndex]   = useState(0)
+  const [showDanger, setShowDanger] = useState(false)
+  const [prevStatus, setPrevStatus] = useState('safe')
 
   const step = NAV_STEPS[stepIndex]
 
-  // 위험 구간 진입 시 모달 표시
   useEffect(() => {
     if (step.status === 'danger' && prevStatus !== 'danger') {
       setShowDanger(true)
@@ -32,11 +34,11 @@ export default function NavigationPage() {
     setPrevStatus(step.status)
   }, [stepIndex])
 
-  // 다음 단계 (테스트용 - 실제로는 GPS 기반)
   const handleNext = () => {
     if (stepIndex < NAV_STEPS.length - 1) {
       setStepIndex((prev) => prev + 1)
     } else {
+      stopNavigation()
       navigate('/')
     }
   }
@@ -46,7 +48,9 @@ export default function NavigationPage() {
 
       {/* 지도 배경 */}
       <div className="absolute inset-0">
-        <SafeMap />
+        <SafeMap>
+          <RouteLayer />
+        </SafeMap>
       </div>
 
       {/* 상단 헤더 */}

@@ -4,6 +4,8 @@ import { Search } from 'lucide-react'
 import SafeMap from '../components/map/SafeMap'
 import FilterChips from '../components/map/FilterChips'
 import RouteCard from '../components/route/RouteCard'
+import RouteLayer from '../components/map/RouteLayer'
+import { useRoute } from '../store/RouteContext'
 
 const ROUTES = [
   {
@@ -38,19 +40,29 @@ const ROUTES = [
 export default function RouteResultPage() {
   const navigate = useNavigate()
   const location = useLocation()
-  const destination = location.state?.destination
+  const { destination: ctxDestination, startNavigation } = useRoute()
+
+  const dest = location.state?.destination ?? ctxDestination
 
   const [selectedRoute, setSelectedRoute] = useState(1)
   const [showAll, setShowAll] = useState(false)
 
   const visibleRoutes = showAll ? ROUTES : ROUTES.slice(0, 1)
 
+  const handleStartNavigation = () => {
+    const route = ROUTES.find((r) => r.id === selectedRoute)
+    startNavigation(route)
+    navigate('/navigation', { state: { route, destination: dest } })
+  }
+
   return (
     <div className="relative w-full h-full">
 
       {/* 지도 배경 */}
       <div className="absolute inset-0">
-        <SafeMap />
+        <SafeMap>
+          <RouteLayer />
+        </SafeMap>
       </div>
 
       {/* 상단 UI */}
@@ -58,7 +70,7 @@ export default function RouteResultPage() {
         <div className="w-full flex items-center gap-3 bg-white rounded-2xl px-4 py-3 shadow-lg">
           <Search size={18} className="text-gray-400" />
           <span className="text-sm text-gray-700 font-medium">
-            {destination?.name ?? '목적지'}
+            {dest?.name ?? '목적지'}
           </span>
           <div className="ml-auto w-8 h-8 bg-[#3B82F6] rounded-xl flex items-center justify-center">
             <span className="text-white text-xs font-bold">A</span>
@@ -89,7 +101,7 @@ export default function RouteResultPage() {
           </span>
         </div>
         <p className="text-xs text-gray-400 mb-4">
-          {destination?.name ?? '목적지'}까지 • {ROUTES[0].km} km
+          {dest?.name ?? '목적지'}까지 • {ROUTES[0].km} km
         </p>
 
         {/* 경로 카드 목록 */}
@@ -117,9 +129,7 @@ export default function RouteResultPage() {
 
         {/* 안내 시작 버튼 */}
         <button
-          onClick={() => navigate('/navigation', {
-            state: { route: ROUTES.find((r) => r.id === selectedRoute), destination }
-          })}
+          onClick={handleStartNavigation}
           className="w-full py-4 rounded-2xl text-white font-semibold text-sm mt-2"
           style={{ backgroundColor: '#3B82F6' }}
         >
