@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { Search } from 'lucide-react'
 import SafeMap from '../components/map/SafeMap'
+import RouteLayer from '../components/map/RouteLayer'
 import FilterChips from '../components/map/FilterChips'
 import RouteCard from '../components/route/RouteCard'
 
@@ -50,7 +51,9 @@ export default function RouteResultPage() {
 
       {/* 지도 배경 */}
       <div className="absolute inset-0">
-        <SafeMap />
+        <SafeMap>
+          <RouteLayer />
+        </SafeMap>
       </div>
 
       {/* 상단 UI */}

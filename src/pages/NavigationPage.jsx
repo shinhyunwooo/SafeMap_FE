@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import SafeMap from '../components/map/SafeMap'
+import RouteLayer from '../components/map/RouteLayer'
 import NavHeader from '../components/navigation/NavHeader'
 import NavBottom from '../components/navigation/NavBottom'
 import DangerModal from '../components/navigation/DangerModal'
@@ -46,7 +47,9 @@ export default function NavigationPage() {
 
       {/* 지도 배경 */}
       <div className="absolute inset-0">
-        <SafeMap />
+        <SafeMap>
+          <RouteLayer />
+        </SafeMap>
       </div>
 
       {/* 상단 헤더 */}
