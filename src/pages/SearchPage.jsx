@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Search, X, Clock, MapPin, ChevronRight } from 'lucide-react'
+import { useRoute } from '../store/RouteContext'
 
 const CATEGORY_CHIPS = ['식당', '카페', '편의점', '공원', '병원']
 
@@ -19,6 +20,8 @@ const HOTPLACES = [
 
 export default function SearchPage() {
   const navigate = useNavigate()
+  const { setDestination } = useRoute()
+
   const [query, setQuery] = useState('')
   const [recentSearches, setRecentSearches] = useState(
     JSON.parse(localStorage.getItem('recentSearches') || '[]')
@@ -41,6 +44,7 @@ export default function SearchPage() {
 
   const handleSelect = (item) => {
     saveRecent(item)
+    setDestination(item)
     navigate('/route-result', { state: { destination: item } })
   }
 
