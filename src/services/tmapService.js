@@ -1,6 +1,5 @@
 import axios from 'axios';
 
-// Tmap API 기본 설정
 const TMAP_APP_KEY = import.meta.env.VITE_TMAP_APP_KEY || '발급받은_앱키를_입력하세요';
 
 const tmapClient = axios.create({
@@ -10,10 +9,6 @@ const tmapClient = axios.create({
     },
 });
 
-/**
- * 장소 검색 API 호출
- * 사용자 입력 키워드를 기반으로 장소 목록을 반환합니다.
- */
 export const searchPlaces = async (keyword) => {
     try {
         const response = await tmapClient.get('/pois', {
@@ -26,7 +21,6 @@ export const searchPlaces = async (keyword) => {
             }
         });
 
-        // 검색 결과가 없을 경우 빈 배열 반환
         if (!response.data || !response.data.searchPoiInfo) return [];
 
         return response.data.searchPoiInfo.pois.poi.map(p => ({
@@ -41,10 +35,6 @@ export const searchPlaces = async (keyword) => {
     }
 };
 
-/**
- * 보행자 경로 탐색 API 호출 및 Turn-by-Turn(TBT) 데이터 추출
- * 일반 최단 경로의 좌표 배열과 상세 텍스트 안내 목록을 반환합니다.
- */
 export const fetchTmapPedestrianRoute = async ({ startLat, startLng, endLat, endLng }) => {
     try {
         const response = await tmapClient.post('/routes/pedestrian?version=1', {
@@ -71,7 +61,6 @@ export const fetchTmapPedestrianRoute = async ({ startLat, startLng, endLat, end
             if (properties.totalDistance) totalDistance = properties.totalDistance;
             if (properties.totalTime) totalTime = properties.totalTime;
 
-            // Point 타입이면서 description(텍스트 안내)이 존재하는 데이터 추출
             if (geometry.type === 'Point' && properties.description) {
                 tbtList.push({
                     description: properties.description,
@@ -80,7 +69,6 @@ export const fetchTmapPedestrianRoute = async ({ startLat, startLng, endLat, end
                 });
             }
 
-            // 렌더링용 경로 좌표 수집
             if (geometry.type === 'Point') {
                 pathCoordinates.push({ lat: geometry.coordinates[1], lng: geometry.coordinates[0] });
             } else if (geometry.type === 'LineString') {
@@ -99,5 +87,58 @@ export const fetchTmapPedestrianRoute = async ({ startLat, startLng, endLat, end
     } catch (error) {
         console.error('보행자 경로 탐색 API 호출 실패:', error);
         throw error;
+    }
+};
+/**
+ * 특정 좌표 반경 1km 이내의 경찰서/파출소 데이터를 가져옵니다. (노이즈 필터링 적용)
+ */
+export const fetchNearbyPolice = async (lat, lng) => {
+    try {
+        const keywords = ['경찰서', '파출소', '치안센터'];
+        const requests = keywords.map(keyword =>
+            tmapClient.get('/pois', {
+                params: {
+                    version: 1,
+                    searchKeyword: keyword,
+                    searchtypCd: "R", // 🚨 수정됨: 대문자 T가 아닌 소문자 t (searchtypCd)
+                    radius: 1,        // 반경 1km
+                    centerLon: lng.toString(),
+                    centerLat: lat.toString(),
+                    resCoordType: "WGS84GEO",
+                    reqCoordType: "WGS84GEO",
+                    count: 15         // 여유 있게 검색
+                }
+            })
+        );
+
+        const responses = await Promise.all(requests);
+        const policeData = [];
+
+        // 🚨 수정됨: /g 플래그 제거 (건너뛰기 버그 방지)
+        const noiseFilter = /화장실|식당|구내|어린이집|주차장|창고|휴게실|민원실|경비|수사대/;
+
+        responses.forEach(res => {
+            if (res.data?.searchPoiInfo?.pois?.poi) {
+                res.data.searchPoiInfo.pois.poi.forEach(p => {
+                    // 이름에 노이즈 키워드가 없으면(false) 배열에 추가
+                    if (!noiseFilter.test(p.name)) {
+                        policeData.push({
+                            name: p.name,
+                            lat: Number(p.noorLat),
+                            lng: Number(p.noorLon),
+                        });
+                    }
+                });
+            }
+        });
+
+        // 중복 데이터 제거 (이름 기준)
+        const uniquePolice = Array.from(new Set(policeData.map(a => a.name)))
+            .map(name => policeData.find(a => a.name === name));
+
+        return uniquePolice;
+    } catch (error) {
+        console.error('경찰서 반경 검색 실패:', error);
+        return [];
     }
 };

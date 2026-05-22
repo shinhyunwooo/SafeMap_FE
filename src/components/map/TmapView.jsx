@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-export default function TmapView({ startCoord, endCoord, routeData, tmapRouteData, onMapClick }) {
+export default function TmapView({ startCoord, endCoord, routeData, tmapRouteData, policeStations = [], onMapClick }) {
     const mapRef = useRef(null);
     const mapInstance = useRef(null);
     const safePolylineRef = useRef(null);
@@ -9,12 +9,10 @@ export default function TmapView({ startCoord, endCoord, routeData, tmapRouteDat
 
     const onMapClickRef = useRef(onMapClick);
 
-    // 최신 클릭 핸들러 참조 업데이트
     useEffect(() => {
         onMapClickRef.current = onMapClick;
     }, [onMapClick]);
 
-    // Tmap 인스턴스 초기화 및 클릭 이벤트 바인딩
     useEffect(() => {
         if (!window.Tmapv2 || mapInstance.current) return;
 
@@ -26,7 +24,6 @@ export default function TmapView({ startCoord, endCoord, routeData, tmapRouteDat
             httpsMode: true
         });
 
-        // 지도 클릭 이벤트 리스너 
         mapInstance.current.addListener("click", (e) => {
             if (onMapClickRef.current && e.latLng) {
                 onMapClickRef.current({ lat: e.latLng.lat(), lng: e.latLng.lng() });
@@ -34,12 +31,10 @@ export default function TmapView({ startCoord, endCoord, routeData, tmapRouteDat
         });
     }, []);
 
-    // 좌표 갱신에 따른 마커 및 폴리라인 재렌더링
     useEffect(() => {
         if (!mapInstance.current) return;
         const map = mapInstance.current;
 
-        // 이전 렌더링 객체 초기화
         if (safePolylineRef.current) {
             safePolylineRef.current.setMap(null);
             safePolylineRef.current = null;
@@ -55,7 +50,6 @@ export default function TmapView({ startCoord, endCoord, routeData, tmapRouteDat
         const bounds = new window.Tmapv2.LatLngBounds();
         let validPointsCount = 0;
 
-        // Bounds 확장 유틸리티 함수
         const extendBounds = (lat, lng) => {
             if (lat && lng && !isNaN(lat) && !isNaN(lng)) {
                 bounds.extend(new window.Tmapv2.LatLng(lat, lng));
@@ -63,13 +57,11 @@ export default function TmapView({ startCoord, endCoord, routeData, tmapRouteDat
             }
         };
 
-        // 해상도 대응 벡터 마커 생성 (SVG Data URI)
         const createSvgMarker = (color, text) => {
             const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="46" height="60" viewBox="0 0 46 60"><path d="M23 0 C10.297 0 0 10.297 0 23 C0 39.5 23 60 23 60 C23 60 46 39.5 46 23 C46 10.297 35.703 0 23 0 Z" fill="${color}" stroke="#ffffff" stroke-width="2.5"/><text x="23" y="28" font-family="sans-serif" font-size="14" font-weight="bold" fill="white" text-anchor="middle">${text}</text></svg>`;
             return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
         };
 
-        // 출발지 마커
         if (startCoord) {
             newMarkers.push(new window.Tmapv2.Marker({
                 position: new window.Tmapv2.LatLng(startCoord.lat, startCoord.lng),
@@ -81,7 +73,6 @@ export default function TmapView({ startCoord, endCoord, routeData, tmapRouteDat
             extendBounds(startCoord.lat, startCoord.lng);
         }
 
-        // 도착지 마커
         if (endCoord) {
             newMarkers.push(new window.Tmapv2.Marker({
                 position: new window.Tmapv2.LatLng(endCoord.lat, endCoord.lng),
@@ -93,7 +84,25 @@ export default function TmapView({ startCoord, endCoord, routeData, tmapRouteDat
             extendBounds(endCoord.lat, endCoord.lng);
         }
 
-        // 일반 최단 경로 (회색 점선)
+        // 치안시설(경찰서/파출소) 마커 렌더링
+        if (policeStations.length > 0) {
+            const policeSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><path d="M16 2 L4 8 L4 16 C4 23 9 29 16 31 C23 29 28 23 28 16 L28 8 Z" fill="#1e3a8a" stroke="#ffffff" stroke-width="2"/><text x="16" y="21" font-size="14" font-weight="bold" fill="white" text-anchor="middle">P</text></svg>`;
+            const policeIconUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(policeSvg)}`;
+
+            policeStations.forEach(station => {
+                newMarkers.push(new window.Tmapv2.Marker({
+                    position: new window.Tmapv2.LatLng(station.lat, station.lng),
+                    icon: policeIconUrl,
+                    iconSize: new window.Tmapv2.Size(32, 32),
+                    offset: new window.Tmapv2.Point(16, 16),
+                    title: station.name, // 마우스 오버 시 파출소 이름 표시
+                    map: map,
+                    zIndex: 999 // 경찰 마커가 선명하게 보이도록 z-index 부여
+                }));
+                extendBounds(station.lat, station.lng);
+            });
+        }
+
         if (tmapRouteData?.path) {
             const tmapPath = [];
             tmapRouteData.path.forEach(coord => {
@@ -111,12 +120,10 @@ export default function TmapView({ startCoord, endCoord, routeData, tmapRouteDat
             }
         }
 
-        // 알고리즘 반영 안전 경로 (파란 실선)
         if (routeData?.geojson) {
             const safePath = [];
             const geometry = routeData.geojson.geometry;
 
-            // MultiLineString 형식 대응
             if (geometry.type === 'MultiLineString') {
                 geometry.coordinates.forEach(line => {
                     line.forEach(coord => {
@@ -140,7 +147,6 @@ export default function TmapView({ startCoord, endCoord, routeData, tmapRouteDat
                 });
             }
 
-            // 위험 요소 마커 렌더링
             const warningSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28"><circle cx="14" cy="14" r="13" fill="#f59e0b" stroke="#ffffff" stroke-width="2"/><text x="14" y="19" font-size="14" font-weight="bold" fill="white" text-anchor="middle">!</text></svg>`;
             const warningIconUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(warningSvg)}`;
 
@@ -158,14 +164,13 @@ export default function TmapView({ startCoord, endCoord, routeData, tmapRouteDat
             }
         }
 
-        // 경로가 화면에 꽉 차도록 지도 범위 재조정
-        if ((routeData?.geojson || tmapRouteData?.path) && validPointsCount > 0) {
+        if ((routeData?.geojson || tmapRouteData?.path || policeStations.length > 0) && validPointsCount > 0) {
             map.fitBounds(bounds);
         }
 
         markersRef.current = newMarkers;
 
-    }, [startCoord, endCoord, routeData, tmapRouteData]);
+    }, [startCoord, endCoord, routeData, tmapRouteData, policeStations]);
 
     return <div ref={mapRef} className="w-full h-full rounded-xl z-0" />;
 }
