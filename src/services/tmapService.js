@@ -94,10 +94,25 @@ export const fetchNearbyPolice = async (lat, lng) => {
     return fetchNearbyPOI(lat, lng, ['경찰서', '파출소', '치안센터'], noiseFilter);
 };
 
-// CCTV (Tmap POI 기반)
 export const fetchNearbyCCTV = async (lat, lng) => {
-    const noiseFilter = /화장실|주차장|창고/;
-    return fetchNearbyPOI(lat, lng, ['CCTV', '방범카메라', '범죄예방시설'], noiseFilter, 1, 20);
+    try {
+        const response = await axios.get(
+            `${import.meta.env.VITE_API_BASE_URL}/api/map/cctv`,
+            { params: { lat, lng, radius: 1000 } }
+        );
+        if (response.data?.status === 'success') {
+            return response.data.data.map(cctv => ({
+                id: cctv.id,
+                lat: cctv.lat,
+                lng: cctv.lng,
+                name: 'CCTV'
+            }));
+        }
+        return [];
+    } catch (error) {
+        console.error('CCTV 데이터 오류:', error);
+        return [];
+    }
 };
 
 // 응급기관 (병원/약국/소방서)
