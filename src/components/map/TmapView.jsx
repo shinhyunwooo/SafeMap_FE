@@ -3,18 +3,18 @@ import { getRouteColor } from '../../styles/colors';
 
 export default function TmapView({
   startCoord, endCoord, routeData, tmapRouteData,
-  policeStations = [], onMapClick
+  policeStations = [], cctvList = [], emergencyList = [], dangerZones = [],
+  onMapClick
 }) {
-  const mapRef          = useRef(null);
-  const mapInstance     = useRef(null);
-  const safePolylinesRef = useRef([]);   // 복수 (외곽선 + 실선)
-  const tmapPolylineRef = useRef(null);
-  const markersRef      = useRef([]);
-  const onMapClickRef   = useRef(onMapClick);
+  const mapRef           = useRef(null);
+  const mapInstance      = useRef(null);
+  const safePolylinesRef = useRef([]);
+  const tmapPolylineRef  = useRef(null);
+  const markersRef       = useRef([]);
+  const onMapClickRef    = useRef(onMapClick);
 
   useEffect(() => { onMapClickRef.current = onMapClick; }, [onMapClick]);
 
-  // 지도 초기화
   useEffect(() => {
     if (!window.Tmapv2 || mapInstance.current) return;
     mapInstance.current = new window.Tmapv2.Map(mapRef.current, {
@@ -27,12 +27,11 @@ export default function TmapView({
     });
   }, []);
 
-  // 경로/마커 렌더링
   useEffect(() => {
     if (!mapInstance.current) return;
     const map = mapInstance.current;
 
-    // 이전 렌더링 초기화
+    // 초기화
     safePolylinesRef.current.forEach(p => p.setMap(null));
     safePolylinesRef.current = [];
     if (tmapPolylineRef.current) { tmapPolylineRef.current.setMap(null); tmapPolylineRef.current = null; }
@@ -59,7 +58,15 @@ export default function TmapView({
       return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
     };
 
-    // 출발지 마커
+    const createCircleMarker = (color, emoji) => {
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+        <circle cx="16" cy="16" r="15" fill="${color}" stroke="#ffffff" stroke-width="2"/>
+        <text x="16" y="21" font-size="14" text-anchor="middle">${emoji}</text>
+      </svg>`;
+      return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+    };
+
+    // 출발지
     if (startCoord) {
       newMarkers.push(new window.Tmapv2.Marker({
         position: new window.Tmapv2.LatLng(startCoord.lat, startCoord.lng),
@@ -70,7 +77,7 @@ export default function TmapView({
       extendBounds(startCoord.lat, startCoord.lng);
     }
 
-    // 도착지 마커
+    // 도착지
     if (endCoord) {
       newMarkers.push(new window.Tmapv2.Marker({
         position: new window.Tmapv2.LatLng(endCoord.lat, endCoord.lng),
@@ -81,23 +88,76 @@ export default function TmapView({
       extendBounds(endCoord.lat, endCoord.lng);
     }
 
-    // 치안시설 마커
+    // 경찰서 마커
     if (policeStations.length > 0) {
       const policeSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
         <path d="M16 2 L4 8 L4 16 C4 23 9 29 16 31 C23 29 28 23 28 16 L28 8 Z"
-          fill="#1e3a8a" stroke="#ffffff" stroke-width="2"/>
-        <text x="16" y="21" font-size="14" font-weight="bold" fill="white" text-anchor="middle">P</text>
+          fill="#1E3A8A" stroke="#ffffff" stroke-width="2"/>
+        <text x="16" y="21" font-size="13" font-weight="bold" fill="white" text-anchor="middle">P</text>
       </svg>`;
       const policeIconUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(policeSvg)}`;
-      policeStations.forEach(station => {
+      policeStations.forEach(s => {
+        if (!s.lat || !s.lng) return;
         newMarkers.push(new window.Tmapv2.Marker({
-          position: new window.Tmapv2.LatLng(station.lat, station.lng),
+          position: new window.Tmapv2.LatLng(s.lat, s.lng),
           icon: policeIconUrl,
           iconSize: new window.Tmapv2.Size(32, 32),
           offset: new window.Tmapv2.Point(16, 16),
-          title: station.name, map, zIndex: 999
+          title: s.name, map, zIndex: 999
         }));
-        extendBounds(station.lat, station.lng);
+      });
+    }
+
+    // CCTV 마커
+    if (cctvList.length > 0) {
+      const cctvIconUrl = createCircleMarker("#3B82F6", "📷");
+      cctvList.forEach(c => {
+        if (!c.lat || !c.lng) return;
+        newMarkers.push(new window.Tmapv2.Marker({
+          position: new window.Tmapv2.LatLng(c.lat, c.lng),
+          icon: cctvIconUrl,
+          iconSize: new window.Tmapv2.Size(32, 32),
+          offset: new window.Tmapv2.Point(16, 16),
+          title: c.name, map, zIndex: 900
+        }));
+      });
+    }
+
+    // 응급기관 마커
+    if (emergencyList.length > 0) {
+      const emergencySvg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+        <circle cx="16" cy="16" r="15" fill="#EF4444" stroke="#ffffff" stroke-width="2"/>
+        <text x="16" y="12" font-size="11" font-weight="bold" fill="white" text-anchor="middle">+</text>
+        <rect x="14" y="8" width="4" height="16" fill="white" rx="1"/>
+        <rect x="8" y="14" width="16" height="4" fill="white" rx="1"/>
+      </svg>`;
+      const emergencyIconUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(emergencySvg)}`;
+      emergencyList.forEach(e => {
+        if (!e.lat || !e.lng) return;
+        newMarkers.push(new window.Tmapv2.Marker({
+          position: new window.Tmapv2.LatLng(e.lat, e.lng),
+          icon: emergencyIconUrl,
+          iconSize: new window.Tmapv2.Size(32, 32),
+          offset: new window.Tmapv2.Point(16, 16),
+          title: e.name, map, zIndex: 900
+        }));
+      });
+    }
+
+    // 위험 범역 히트맵
+    if (dangerZones.length > 0) {
+      dangerZones.forEach(d => {
+        if (!d.lat || !d.lng) return;
+        newMarkers.push(new window.Tmapv2.Circle({
+          center: new window.Tmapv2.LatLng(d.lat, d.lng),
+          radius: 60,
+          fillColor: '#EF4444',
+          fillOpacity: 0.25,
+          strokeColor: '#EF4444',
+          strokeOpacity: 0.5,
+          strokeWeight: 1,
+          map
+        }));
       });
     }
 
@@ -109,22 +169,19 @@ export default function TmapView({
       });
       if (tmapPath.length > 0) {
         tmapPolylineRef.current = new window.Tmapv2.Polyline({
-          path: tmapPath,
-          strokeColor: "#9CA3AF",
-          strokeWeight: 5,
-          strokeStyle: "dash",
-          map
+          path: tmapPath, strokeColor: "#9CA3AF",
+          strokeWeight: 5, strokeStyle: "dash", map
         });
       }
     }
 
-    // 안전 경로 (위험도별 색상 + 드로잉 애니메이션)
+    // 안전 경로 (위험도 색상)
     if (routeData?.geojson) {
-      const geometry = routeData.geojson.geometry;
-      const scores   = routeData.route_analysis?.scores;
+      const geometry   = routeData.geojson.geometry;
+      const scores     = routeData.route_analysis?.scores;
       const routeColor = getRouteColor(scores);
+      const safePath   = [];
 
-      const safePath = [];
       if (geometry.type === 'MultiLineString') {
         geometry.coordinates.forEach(line =>
           line.forEach(coord => {
@@ -140,36 +197,26 @@ export default function TmapView({
       }
 
       if (safePath.length > 0) {
-        // 흰색 외곽선
         const outline = new window.Tmapv2.Polyline({
-          path: safePath,
-          strokeColor: '#FFFFFF',
-          strokeWeight: 11,
-          strokeOpacity: 0.9,
-          map
+          path: safePath, strokeColor: '#FFFFFF',
+          strokeWeight: 11, strokeOpacity: 0.9, map
         });
-        // 위험도 색상 실선
         const mainLine = new window.Tmapv2.Polyline({
-          path: safePath,
-          strokeColor: routeColor,
-          strokeWeight: 7,
-          strokeOpacity: 1,
-          map
+          path: safePath, strokeColor: routeColor,
+          strokeWeight: 7, strokeOpacity: 1, map
         });
         safePolylinesRef.current = [outline, mainLine];
 
-        // 드로잉 애니메이션 (SVG path 찾아서 적용)
+        // 드로잉 애니메이션
         setTimeout(() => {
-          const svgPaths = document.querySelectorAll(
-            '.tmap-map path[stroke="' + routeColor + '"]'
-          );
-          svgPaths.forEach(path => {
-            const len = path.getTotalLength?.() || 2000;
-            path.style.strokeDasharray  = len;
-            path.style.strokeDashoffset = len;
-            path.style.transition = 'stroke-dashoffset 1.5s ease-in-out';
-            requestAnimationFrame(() => { path.style.strokeDashoffset = '0'; });
-          });
+          document.querySelectorAll(`.tmap-map path[stroke="${routeColor}"]`)
+            .forEach(path => {
+              const len = path.getTotalLength?.() || 2000;
+              path.style.strokeDasharray  = len;
+              path.style.strokeDashoffset = len;
+              path.style.transition = 'stroke-dashoffset 1.5s ease-in-out';
+              requestAnimationFrame(() => { path.style.strokeDashoffset = '0'; });
+            });
         }, 100);
       }
 
@@ -187,8 +234,7 @@ export default function TmapView({
           icon: warningIconUrl,
           iconSize: new window.Tmapv2.Size(28, 28),
           offset: new window.Tmapv2.Point(14, 14),
-          title: `${m.type}: ${m.detail}`,
-          map
+          title: `${m.type}: ${m.detail}`, map
         }));
       });
     }
@@ -198,7 +244,7 @@ export default function TmapView({
     }
     markersRef.current = newMarkers;
 
-  }, [startCoord, endCoord, routeData, tmapRouteData, policeStations]);
+  }, [startCoord, endCoord, routeData, tmapRouteData, policeStations, cctvList, emergencyList, dangerZones]);
 
   return <div ref={mapRef} className="w-full h-full z-0" />;
 }
