@@ -4,6 +4,7 @@ import { getRouteColor } from '../../styles/colors';
 export default function TmapView({
   startCoord, endCoord, routeData, tmapRouteData,
   policeStations = [], cctvList = [], emergencyList = [], dangerZones = [],
+  highlightGeneralRoute = false,
   onMapClick
 }) {
   const mapRef           = useRef(null);
@@ -25,6 +26,15 @@ export default function TmapView({
       if (onMapClickRef.current && e.latLng)
         onMapClickRef.current({ lat: e.latLng.lat(), lng: e.latLng.lng() });
     });
+  }, []);
+
+  useEffect(() => {
+    if (!mapRef.current) return;
+    const resizeObserver = new ResizeObserver(() => {
+      window.dispatchEvent(new Event('resize'));
+    });
+    resizeObserver.observe(mapRef.current);
+    return () => resizeObserver.disconnect();
   }, []);
 
   useEffect(() => {
@@ -161,7 +171,7 @@ export default function TmapView({
       });
     }
 
-    // 일반 최단 경로 (회색 점선)
+    // 일반 최단 경로 (회색 점선 or 강조선)
     if (tmapRouteData?.path) {
       const tmapPath = tmapRouteData.path.map(coord => {
         extendBounds(coord.lat, coord.lng);
@@ -169,8 +179,11 @@ export default function TmapView({
       });
       if (tmapPath.length > 0) {
         tmapPolylineRef.current = new window.Tmapv2.Polyline({
-          path: tmapPath, strokeColor: "#9CA3AF",
-          strokeWeight: 5, strokeStyle: "dash", map
+          path: tmapPath,
+          strokeColor: highlightGeneralRoute ? "#2563EB" : "#9CA3AF",
+          strokeWeight: highlightGeneralRoute ? 8 : 5,
+          strokeStyle: highlightGeneralRoute ? "solid" : "dash",
+          map
         });
       }
     }
@@ -244,7 +257,7 @@ export default function TmapView({
     }
     markersRef.current = newMarkers;
 
-  }, [startCoord, endCoord, routeData, tmapRouteData, policeStations, cctvList, emergencyList, dangerZones]);
+  }, [startCoord, endCoord, routeData, tmapRouteData, policeStations, cctvList, emergencyList, dangerZones, highlightGeneralRoute]);
 
   return <div ref={mapRef} className="w-full h-full z-0" />;
 }
