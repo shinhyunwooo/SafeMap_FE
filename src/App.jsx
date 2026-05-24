@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { fetchSafeRoute } from './services/routeService';
 import { fetchTmapPedestrianRoute, fetchNearbyPolice, fetchNearbyCCTV, fetchNearbyEmergency } from './services/tmapService';
 import TmapView from './components/map/TmapView';
@@ -21,6 +21,41 @@ const FILTERS = [
 ];
 
 function App() {
+  // 패널 리사이즈 상태
+const [panelWidth, setPanelWidth] = useState(400);
+const [isResizing, setIsResizing] = useState(false);
+const resizeStartX = useRef(0);
+const resizeStartWidth = useRef(0);
+
+const handleResizeStart = (e) => {
+  setIsResizing(true);
+  resizeStartX.current = e.clientX;
+  resizeStartWidth.current = panelWidth;
+};
+
+useEffect(() => {
+  const handleResizeMove = (e) => {
+    if (!isResizing) return;
+    const diff = e.clientX - resizeStartX.current;
+    const newWidth = Math.min(600, Math.max(300, resizeStartWidth.current + diff));
+    setPanelWidth(newWidth);
+  };
+  const handleResizeEnd = () => setIsResizing(false);
+
+  if (isResizing) {
+    window.addEventListener('mousemove', handleResizeMove);
+    window.addEventListener('mouseup', handleResizeEnd);
+  }
+  return () => {
+    window.removeEventListener('mousemove', handleResizeMove);
+    window.removeEventListener('mouseup', handleResizeEnd);
+  };
+}, [isResizing]);
+
+useEffect(() => {
+  window.dispatchEvent(new Event('resize'));
+}, [panelWidth]);
+
   const [isLoading,      setIsLoading]      = useState(false);
   const [routeData,      setRouteData]      = useState(null);
   const [tmapRouteData,  setTmapRouteData]  = useState(null);
@@ -34,6 +69,9 @@ function App() {
   const [points,         setPoints]         = useState({ start: null, end: null });
   const [bottomOpen,     setBottomOpen]     = useState(false);
   const [showResult,     setShowResult]     = useState(false);
+  const [showSafeTBT,    setShowSafeTBT]    = useState(false);
+  const [showTmapTBT,    setShowTmapTBT]    = useState(false);
+  const [highlightGeneralRoute, setHighlightGeneralRoute] = useState(false);
   const clickLockRef = useRef(0);
 
   const handleMapClick = (latlng) => {
@@ -68,6 +106,9 @@ function App() {
       setRouteData(safeResult);
       setTmapRouteData(tmapResult);
       setShowResult(true);
+      setShowSafeTBT(true);
+      setShowTmapTBT(false);
+      setHighlightGeneralRoute(false);
       setBottomOpen(true);
       // 필터 켜져있으면 위험범역 데이터 갱신
       if (activeFilters.includes('danger')) {
@@ -79,6 +120,20 @@ function App() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const toggleSafeRoute = () => {
+    const next = !showSafeTBT;
+    setShowSafeTBT(next);
+    setShowTmapTBT(false);
+    setHighlightGeneralRoute(false);
+  };
+
+  const toggleGeneralRoute = () => {
+    const next = !showTmapTBT;
+    setShowTmapTBT(next);
+    setShowSafeTBT(false);
+    setHighlightGeneralRoute(next);
   };
 
   // 기준 좌표 계산 (경로 중앙 or 출발지)
@@ -130,7 +185,9 @@ function App() {
     setPoints({ start: null, end: null });
     setRouteData(null); setTmapRouteData(null);
     setPoliceStations([]); setCctvList([]); setEmergencyList([]); setDangerZones([]);
-    setActiveFilters([]); setShowResult(false); setBottomOpen(false);
+    setActiveFilters([]);
+    setShowResult(false); setShowSafeTBT(false); setShowTmapTBT(false);
+    setHighlightGeneralRoute(false); setBottomOpen(false);
   };
 
   const Badge = ({ type }) => {
@@ -169,7 +226,10 @@ function App() {
       {/* ══════════════════════════════
           데스크탑 왼쪽 패널
       ══════════════════════════════ */}
-      <div className="hidden md:flex flex-col w-[400px] min-w-[360px] h-full bg-white shadow-xl z-10 overflow-y-auto">
+      <div
+        className="hidden md:flex flex-col h-full min-h-0 bg-white shadow-xl z-10 overflow-y-auto relative flex-shrink-0"
+        style={{ width: panelWidth, minWidth: 300, maxWidth: 600, userSelect: isResizing ? 'none' : 'auto' }}
+      >
 
         {/* 헤더 */}
         <div className="px-6 pt-6 pb-4 border-b border-gray-100">
@@ -224,7 +284,7 @@ function App() {
 
         {/* 경로 결과 */}
         {showResult && routeData && tmapRouteData && (
-          <div className="px-6 py-4 flex-1 overflow-y-auto">
+          <div className="px-6 py-4">
             <div className="flex items-center justify-between mb-1">
               <span className="text-sm font-bold text-gray-800">경로를 탐색하였습니다</span>
               <span className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-full"
@@ -238,8 +298,9 @@ function App() {
             </p>
 
             {/* 안심 경로 카드 */}
-            <div className="rounded-2xl p-4 mb-3 border-2"
-              style={{ backgroundColor: COLORS.primary_light, borderColor: COLORS.primary }}>
+            <div className="rounded-2xl p-4 mb-3 border-2 cursor-pointer hover:opacity-90 transition-opacity"
+              style={{ backgroundColor: COLORS.primary_light, borderColor: COLORS.primary }}
+              onClick={toggleSafeRoute}>
               <div className="flex justify-between items-start mb-2">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-bold text-gray-800">안심 경로</span>
@@ -256,8 +317,33 @@ function App() {
               </p>
             </div>
 
+            {/* TBT 상세 안내 - 안심 경로용 */}
+            {showSafeTBT && routeData?.geojson && (
+              <div className="mb-4">
+                <p className="text-xs font-bold text-gray-700 mb-2">상세 경로 안내</p>
+                <div className="space-y-3 border-l-2 ml-2"
+                  style={{ borderColor: COLORS.primary_light }}>
+                  {(routeData.route_analysis?.markers ?? []).map((marker, i) => (
+                    <div key={i} className="pl-4 relative">
+                      <span className="absolute -left-[7px] top-1 w-3 h-3 bg-white border-2 rounded-full"
+                        style={{ borderColor: COLORS.primary }} />
+                      <p className="text-xs text-gray-700">{marker.type}: {marker.detail}</p>
+                    </div>
+                  ))}
+                  {tmapRouteData?.tbtList?.length > 0 && tmapRouteData.tbtList.map((tbt, i) => (
+                    <div key={`tbt-${i}`} className="pl-4 relative">
+                      <span className="absolute -left-[7px] top-1 w-3 h-3 bg-white border-2 rounded-full"
+                        style={{ borderColor: COLORS.primary }} />
+                      <p className="text-xs text-gray-700">{tbt.description}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* 일반 최단 경로 카드 */}
-            <div className="rounded-2xl p-4 mb-4 border border-gray-200 bg-gray-50">
+            <div className="rounded-2xl p-4 mb-4 border border-gray-200 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors"
+              onClick={toggleGeneralRoute}>
               <div className="flex justify-between items-start mb-2">
                 <span className="text-sm font-bold text-gray-800">일반 최단 경로</span>
                 <span className="text-base font-bold text-gray-800">
@@ -267,9 +353,9 @@ function App() {
               <Badge type="danger" />
             </div>
 
-            {/* TBT 상세 안내 */}
-            {tmapRouteData?.tbtList?.length > 0 && (
-              <div>
+            {/* TBT 상세 안내 - 일반 최단 경로용 */}
+            {showTmapTBT && tmapRouteData?.tbtList?.length > 0 && (
+              <div className="mb-4">
                 <p className="text-xs font-bold text-gray-700 mb-2">상세 경로 안내</p>
                 <ul className="space-y-3 border-l-2 ml-2"
                   style={{ borderColor: COLORS.primary_light }}>
@@ -285,12 +371,22 @@ function App() {
             )}
           </div>
         )}
+        {/* 리사이즈 핸들 */}
+        <div
+          onMouseDown={handleResizeStart}
+          className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-blue-400 transition-colors"
+          style={{ backgroundColor: isResizing ? '#3B82F6' : 'transparent' }}
+        />
       </div>
 
       {/* ══════════════════════════════
           지도 영역
       ══════════════════════════════ */}
-      <div className="flex-1 relative h-full">
+      <div className="flex-1 relative h-full min-w-0">
+        {/* 리사이즈 중 지도 클릭/드래그 방지 오버레이 */}
+        {isResizing && (
+          <div className="absolute inset-0 z-[9999] cursor-col-resize" />
+        )}
         <TmapView
           startCoord={points.start} endCoord={points.end}
           routeData={routeData} tmapRouteData={tmapRouteData}
@@ -298,6 +394,7 @@ function App() {
           cctvList={cctvList}
           emergencyList={emergencyList}
           dangerZones={dangerZones}
+          highlightGeneralRoute={highlightGeneralRoute}
           onMapClick={handleMapClick}
         />
 
@@ -342,21 +439,22 @@ function App() {
               <FilterChips />
             </div>
 
-            {/* 페르소나 칩 */}
-            <div className="flex gap-2 mb-3 overflow-x-auto pb-1">
-              {Object.entries(PERSONA_LABEL).map(([key, val]) => (
-                <button key={key} onClick={() => setPersona(key)}
-                  className="shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border transition-all"
-                  style={persona === key
-                    ? { backgroundColor: val.color, color: 'white', borderColor: val.color }
-                    : { backgroundColor: 'white', color: '#6B7280', borderColor: '#D1D5DB' }}>
-                  {val.text}
-                </button>
-              ))}
-            </div>
+            {/* 페르소나 + 시간 */}
+            <div className="mb-3 border-b border-gray-100 pb-3">
+              <p className="text-xs text-gray-400 font-medium mb-2">사용자 유형</p>
+              <div className="flex gap-2 mb-3 overflow-x-auto pb-1">
+                {Object.entries(PERSONA_LABEL).map(([key, val]) => (
+                  <button key={key} onClick={() => setPersona(key)}
+                    className="shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border transition-all"
+                    style={persona === key
+                      ? { backgroundColor: val.color, color: 'white', borderColor: val.color }
+                      : { backgroundColor: 'white', color: '#6B7280', borderColor: '#D1D5DB' }}>
+                    {val.text}
+                  </button>
+                ))}
+              </div>
 
-            {/* 시간 슬라이더 */}
-            <div className="mb-3">
+              {/* 시간 슬라이더 */}
               <div className="flex justify-between text-xs text-gray-500 mb-1">
                 <span>출발 시간</span>
                 <span className="font-bold" style={{ color: COLORS.primary }}>{requestHour}시</span>
@@ -395,8 +493,9 @@ function App() {
                     탐색 완료
                   </span>
                 </div>
-                <div className="rounded-2xl p-4 mb-2 border-2"
-                  style={{ backgroundColor: COLORS.primary_light, borderColor: COLORS.primary }}>
+                <div className="rounded-2xl p-4 mb-2 border-2 cursor-pointer hover:opacity-90 transition-opacity"
+                  style={{ backgroundColor: COLORS.primary_light, borderColor: COLORS.primary }}
+                  onClick={toggleSafeRoute}>
                   <div className="flex justify-between items-center mb-2">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-bold text-gray-800">안심 경로</span>
@@ -412,18 +511,43 @@ function App() {
                     {routeData.route_analysis?.summary}
                   </p>
                 </div>
+                {/* 모바일 상세 경로 안내 - 안심 경로용 */}
+                {showSafeTBT && routeData?.geojson && (
+                  <div className="mb-4">
+                    <p className="text-xs font-bold text-gray-700 mb-2">상세 경로 안내</p>
+                    <div className="space-y-3 border-l-2 ml-2"
+                      style={{ borderColor: COLORS.primary_light }}>
+                      {(routeData.route_analysis?.markers ?? []).map((marker, i) => (
+                        <div key={i} className="pl-4 relative">
+                          <span className="absolute -left-[7px] top-1 w-3 h-3 bg-white border-2 rounded-full"
+                            style={{ borderColor: COLORS.primary }} />
+                          <p className="text-xs text-gray-700">{marker.type}: {marker.detail}</p>
+                        </div>
+                      ))}
+                      {tmapRouteData?.tbtList?.length > 0 && tmapRouteData.tbtList.map((tbt, i) => (
+                        <div key={`tbt-${i}`} className="pl-4 relative">
+                          <span className="absolute -left-[7px] top-1 w-3 h-3 bg-white border-2 rounded-full"
+                            style={{ borderColor: COLORS.primary }} />
+                          <p className="text-xs text-gray-700">{tbt.description}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {tmapRouteData && (
-                  <div className="rounded-2xl p-4 mb-2 border border-gray-200 bg-gray-50">
-                    <div className="flex justify-between items-center">
+                  <div className="rounded-2xl p-4 mb-2 border border-gray-200 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors"
+                    onClick={toggleGeneralRoute}>
+                    <div className="flex justify-between items-start mb-2">
                       <span className="text-sm font-bold text-gray-800">일반 최단 경로</span>
                       <span className="text-sm font-bold text-gray-800">
                         {tmapRouteData.totalDistance}m
                       </span>
                     </div>
+                    <Badge type="danger" />
                   </div>
                 )}
-                {/* ← 여기 추가: 모바일 상세 경로 안내 */}
-                {tmapRouteData?.tbtList?.length > 0 && (
+                {/* 모바일 상세 경로 안내 - 일반 최단 경로용 */}
+                {showTmapTBT && tmapRouteData?.tbtList?.length > 0 && (
                   <div className="mb-4">
                     <p className="text-xs font-bold text-gray-700 mb-2">상세 경로 안내</p>
                     <ul className="space-y-3 border-l-2 ml-2"
@@ -433,7 +557,7 @@ function App() {
                           <span className="absolute -left-[7px] top-1 w-3 h-3 bg-white border-2 rounded-full"
                             style={{ borderColor: COLORS.primary }} />
                           <p className="text-xs text-gray-700">{tbt.description}</p>
-                      </li>
+                        </li>
                       ))}
                     </ul>
                   </div>
