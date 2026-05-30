@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { getRouteColor } from '../../styles/colors';
+import { COLORS } from '../../styles/colors';
 
 export default function TmapView({
   startCoord, endCoord, routeData, tmapRouteData,
@@ -188,41 +188,33 @@ export default function TmapView({
       }
     }
 
-    // 안전 경로 (위험도 색상)
-    if (routeData?.geojson) {
-      const geometry   = routeData.geojson.geometry;
-      const scores     = routeData.route_analysis?.scores;
-      const routeColor = getRouteColor(scores);
-      const safePath   = [];
+    // 안전 경로 (구간별 4단계 색상: safe/caution/warning/danger)
+    if (routeData?.geojson?.type === 'FeatureCollection') {
+      routeData.geojson.features.forEach(feature => {
+        const coords = feature.geometry?.coordinates;
+        if (!coords || coords.length === 0) return;
 
-      if (geometry.type === 'MultiLineString') {
-        geometry.coordinates.forEach(line =>
-          line.forEach(coord => {
-            safePath.push(new window.Tmapv2.LatLng(coord[1], coord[0]));
-            extendBounds(coord[1], coord[0]);
-          })
-        );
-      } else {
-        geometry.coordinates.forEach(coord => {
-          safePath.push(new window.Tmapv2.LatLng(coord[1], coord[0]));
+        const edgePath = coords.map(coord => {
           extendBounds(coord[1], coord[0]);
+          return new window.Tmapv2.LatLng(coord[1], coord[0]);
         });
-      }
 
-      if (safePath.length > 0) {
+        const color = COLORS[feature.properties?.risk_level] || COLORS.primary;
         const outline = new window.Tmapv2.Polyline({
-          path: safePath, strokeColor: '#FFFFFF',
+          path: edgePath, strokeColor: '#FFFFFF',
           strokeWeight: 11, strokeOpacity: 0.9, map
         });
         const mainLine = new window.Tmapv2.Polyline({
-          path: safePath, strokeColor: routeColor,
+          path: edgePath, strokeColor: color,
           strokeWeight: 7, strokeOpacity: 1, map
         });
-        safePolylinesRef.current = [outline, mainLine];
+        safePolylinesRef.current.push(outline, mainLine);
+      });
 
-        // 드로잉 애니메이션
-        setTimeout(() => {
-          document.querySelectorAll(`.tmap-map path[stroke="${routeColor}"]`)
+      // 드로잉 애니메이션 (구간별 4색 각각 적용)
+      setTimeout(() => {
+        Object.values(COLORS).forEach(c => {
+          document.querySelectorAll(`.tmap-map path[stroke="${c}"]`)
             .forEach(path => {
               const len = path.getTotalLength?.() || 2000;
               path.style.strokeDasharray  = len;
@@ -230,8 +222,8 @@ export default function TmapView({
               path.style.transition = 'stroke-dashoffset 1.5s ease-in-out';
               requestAnimationFrame(() => { path.style.strokeDashoffset = '0'; });
             });
-        }, 100);
-      }
+        });
+      }, 100);
 
       // 위험 요소 마커
       const warningSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">
