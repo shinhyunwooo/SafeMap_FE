@@ -211,6 +211,20 @@ export default function TmapView({
         safePolylinesRef.current.push(outline, mainLine);
       });
 
+      // 드로잉 애니메이션 (구간별 4색 각각 적용)
+      setTimeout(() => {
+        Object.values(COLORS).forEach(c => {
+          document.querySelectorAll(`.tmap-map path[stroke="${c}"]`)
+            .forEach(path => {
+              const len = path.getTotalLength?.() || 2000;
+              path.style.strokeDasharray  = len;
+              path.style.strokeDashoffset = len;
+              path.style.transition = 'stroke-dashoffset 1.5s ease-in-out';
+              requestAnimationFrame(() => { path.style.strokeDashoffset = '0'; });
+            });
+        });
+      }, 100);
+
       // 위험 요소 마커
       const warningSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">
         <circle cx="14" cy="14" r="13" fill="#FB923C" stroke="#ffffff" stroke-width="2"/>
