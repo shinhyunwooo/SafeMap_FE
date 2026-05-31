@@ -1,3 +1,49 @@
+import FilterMarkers from '../components/map/FilterMarkers'
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { Search } from 'lucide-react'
+import SafeMap from '../components/map/SafeMap'
+import FilterChips from '../components/map/FilterChips'
+
 export default function MainPage() {
-  return <div className="h-full">메인 지도</div>
+  const navigate = useNavigate()
+  const [activeFilters, setActiveFilters] = useState(['all'])
+
+  return (
+    <div className="relative w-full h-full">
+
+      {/* 지도 */}
+      <div className="absolute inset-0">
+        <SafeMap>
+          <FilterMarkers activeFilters={activeFilters} />
+        </SafeMap>
+      </div>
+
+      {/* 상단 UI */}
+      <div className="absolute top-0 left-0 right-0 z-[1000] px-4 pt-4 flex flex-col gap-2">
+        <button
+          onClick={() => navigate('/search')}
+          className="w-full flex items-center gap-3 bg-white rounded-2xl px-4 py-3 shadow-lg"
+        >
+          <Search size={18} className="text-gray-400" />
+          <span className="text-gray-400 text-sm">어디로 갈까요?</span>
+        </button>
+        <FilterChips onFilterChange={setActiveFilters} />
+      </div>
+
+      {/* 현재 위치 버튼 */}
+      <button
+        className="absolute bottom-8 right-4 z-[1000]
+          w-11 h-11 bg-white rounded-full shadow-lg
+          flex items-center justify-center"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24"
+          fill="none" stroke="#3B82F6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>
+        </svg>
+      </button>
+
+    </div>
+  )
 }
