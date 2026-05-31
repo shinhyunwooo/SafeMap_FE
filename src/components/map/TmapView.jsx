@@ -5,7 +5,9 @@ export default function TmapView({
   startCoord, endCoord, routeData, tmapRouteData,
   policeStations = [], cctvList = [], emergencyList = [], dangerZones = [],
   highlightGeneralRoute = false,
-  onMapClick
+  onMapClick,
+  userLocation,
+  locateTrigger,
 }) {
   const mapRef           = useRef(null);
   const mapInstance      = useRef(null);
@@ -13,6 +15,7 @@ export default function TmapView({
   const tmapPolylineRef  = useRef(null);
   const markersRef       = useRef([]);
   const onMapClickRef    = useRef(onMapClick);
+  const userMarkerRef    = useRef(null);
 
   useEffect(() => { onMapClickRef.current = onMapClick; }, [onMapClick]);
 
@@ -250,6 +253,39 @@ export default function TmapView({
     markersRef.current = newMarkers;
 
   }, [startCoord, endCoord, routeData, tmapRouteData, policeStations, cctvList, emergencyList, dangerZones, highlightGeneralRoute]);
+
+  // 마커만 업데이트 (위치가 바뀔 때마다)
+  useEffect(() => {
+    if (!mapInstance.current || !userLocation) return;
+    const map = mapInstance.current;
+
+    if (userMarkerRef.current) {
+      userMarkerRef.current.setMap(null);
+      userMarkerRef.current = null;
+    }
+
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">
+      <circle cx="14" cy="14" r="13" fill="#3B82F6" fill-opacity="0.2"/>
+      <circle cx="14" cy="14" r="8" fill="#3B82F6" fill-opacity="0.35"/>
+      <circle cx="14" cy="14" r="5" fill="#3B82F6" stroke="white" stroke-width="2.5"/>
+    </svg>`;
+    const iconUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+
+    userMarkerRef.current = new window.Tmapv2.Marker({
+      position: new window.Tmapv2.LatLng(userLocation.lat, userLocation.lng),
+      icon: iconUrl,
+      iconSize: new window.Tmapv2.Size(28, 28),
+      offset: new window.Tmapv2.Point(14, 14),
+      map,
+      zIndex: 2000,
+    });
+  }, [userLocation]);
+
+  // 지도 이동은 버튼을 눌렀을 때(locateTrigger)만
+  useEffect(() => {
+    if (!mapInstance.current || !userLocation || locateTrigger === 0) return;
+    mapInstance.current.setCenter(new window.Tmapv2.LatLng(userLocation.lat, userLocation.lng));
+  }, [locateTrigger]);
 
   return <div ref={mapRef} className="w-full h-full z-0" />;
 }
