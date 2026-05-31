@@ -5,7 +5,7 @@ import TmapView from './components/map/TmapView';
 import LocationSearch from './components/route/LocationSearch';
 import ControlPanel from './components/route/ControlPanel';
 import { COLORS, BADGE_STYLES, getRouteBadgeType } from './styles/colors';
-import { RotateCcw, Shield, ChevronUp, ChevronDown } from 'lucide-react';
+import { RotateCcw, Shield, ChevronUp, ChevronDown, Navigation } from 'lucide-react';
 
 const PERSONA_LABEL = {
   general: { text: '일반',     color: COLORS.safe },
@@ -19,6 +19,48 @@ const FILTERS = [
   { id: 'police',    label: '경찰서',   color: '#1E3A8A' },
   //{ id: 'danger',    label: '위험 범역', color: '#FB923C' },
 ];
+
+const SEGMENT_ORDER = [
+  { key: 'safe',    color: COLORS.safe,    label: '안전' },
+  { key: 'caution', color: COLORS.caution, label: '주의' },
+  { key: 'warning', color: COLORS.warning, label: '경고' },
+  { key: 'danger',  color: COLORS.danger,  label: '위험' },
+];
+
+function calcSegmentSequence(geojson) {
+  if (geojson?.type !== 'FeatureCollection') return null;
+  const valid = new Set(['safe', 'caution', 'warning', 'danger']);
+  const segs = [];
+  let total = 0;
+
+  geojson.features.forEach(f => {
+    const coords = f.geometry?.coordinates;
+    const level = f.properties?.risk_level;
+    if (!coords || coords.length < 2 || !valid.has(level)) return;
+
+    let len = 0;
+    for (let i = 0; i < coords.length - 1; i++) {
+      const dlat = coords[i + 1][1] - coords[i][1];
+      const dlng = (coords[i + 1][0] - coords[i][0]) * Math.cos(coords[i][1] * Math.PI / 180);
+      len += Math.sqrt(dlat * dlat + dlng * dlng);
+    }
+    if (len === 0) return;
+    total += len;
+
+    // 연속된 같은 레벨은 합치기
+    if (segs.length > 0 && segs[segs.length - 1].level === level) {
+      segs[segs.length - 1].len += len;
+    } else {
+      segs.push({ level, len });
+    }
+  });
+
+  if (total === 0 || segs.length === 0) return null;
+  return segs.map(s => ({ level: s.level, pct: (s.len / total) * 100 }));
+}
+
+const walkingMins = (meters) => Math.ceil(meters / 67);
+const fmtDist = (m) => m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)}m`;
 
 function App() {
   // 패널 리사이즈 상태
@@ -68,6 +110,8 @@ useEffect(() => {
   const [requestHour,    setRequestHour]    = useState(new Date().getHours());
   const [points,         setPoints]         = useState({ start: null, end: null });
   const [bottomOpen,     setBottomOpen]     = useState(false);
+  const [userLocation,   setUserLocation]   = useState(null);
+  const [locateTrigger,  setLocateTrigger]  = useState(0);
   const [showResult,     setShowResult]     = useState(false);
   const [showSafeTBT,    setShowSafeTBT]    = useState(false);
   const [showTmapTBT,    setShowTmapTBT]    = useState(false);
@@ -181,6 +225,17 @@ useEffect(() => {
     }
   };
 
+  const handleLocateMe = () => {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setLocateTrigger(t => t + 1);
+      },
+      () => alert("위치 접근 권한이 필요합니다."),
+      { enableHighAccuracy: true }
+    );
+  };
+
   const handleReset = () => {
     setPoints({ start: null, end: null });
     setRouteData(null); setTmapRouteData(null);
@@ -218,6 +273,36 @@ useEffect(() => {
       })}
     </div>
   );
+
+  const SegmentBar = ({ geojson }) => {
+    const seq = calcSegmentSequence(geojson);
+    if (!seq) return null;
+
+    const colorMap = { safe: COLORS.safe, caution: COLORS.caution, warning: COLORS.warning, danger: COLORS.danger };
+
+    // 범례용 레벨별 합산 (경로 순서대로 등장한 레벨만)
+    const totals = {};
+    seq.forEach(s => { totals[s.level] = (totals[s.level] || 0) + s.pct; });
+    const legend = SEGMENT_ORDER.filter(o => totals[o.key] != null);
+
+    return (
+      <div className="mt-2">
+        <div className="flex h-2 rounded-full overflow-hidden">
+          {seq.map((s, i) => (
+            <div key={i} style={{ width: `${s.pct}%`, backgroundColor: colorMap[s.level] }} />
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-x-3 mt-1.5">
+          {legend.map(o => (
+            <span key={o.key} className="flex items-center gap-1 text-xs text-gray-500">
+              <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ backgroundColor: o.color }} />
+              {o.label} {Math.round(totals[o.key])}%
+            </span>
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="h-screen w-screen overflow-hidden flex flex-col md:flex-row"
@@ -307,12 +392,14 @@ useEffect(() => {
                   <span className="text-xs px-2 py-0.5 rounded-full text-white font-medium"
                     style={{ backgroundColor: COLORS.primary }}>추천</span>
                 </div>
-                <span className="text-base font-bold text-gray-800">
-                  {Math.round(routeData.total_distance_meters)}m
-                </span>
+                <div className="text-right">
+                  <div className="text-base font-bold text-gray-800">{walkingMins(routeData.total_distance_meters)} 분</div>
+                  <div className="text-xs text-gray-400">{fmtDist(routeData.total_distance_meters)}</div>
+                </div>
               </div>
-              <div className="mb-3"><Badge type={getRouteBadgeType(routeData?.route_analysis?.scores)} /></div>
-              <p className="text-xs text-gray-600 leading-relaxed">
+              <div className="mb-2"><Badge type={getRouteBadgeType(routeData?.route_analysis?.scores)} /></div>
+              <SegmentBar geojson={routeData.geojson} />
+              <p className="text-xs text-gray-600 leading-relaxed mt-2">
                 {routeData.route_analysis?.summary}
               </p>
             </div>
@@ -346,9 +433,10 @@ useEffect(() => {
               onClick={toggleGeneralRoute}>
               <div className="flex justify-between items-start mb-2">
                 <span className="text-sm font-bold text-gray-800">일반 최단 경로</span>
-                <span className="text-base font-bold text-gray-800">
-                  {tmapRouteData.totalDistance}m
-                </span>
+                <div className="text-right">
+                  <div className="text-base font-bold text-gray-800">{walkingMins(tmapRouteData.totalDistance)} 분</div>
+                  <div className="text-xs text-gray-400">{fmtDist(tmapRouteData.totalDistance)}</div>
+                </div>
               </div>
               <Badge type="danger" />
             </div>
@@ -396,10 +484,18 @@ useEffect(() => {
           dangerZones={dangerZones}
           highlightGeneralRoute={highlightGeneralRoute}
           onMapClick={handleMapClick}
+          userLocation={userLocation}
+          locateTrigger={locateTrigger}
         />
 
+        {/* 데스크탑 현재 위치 버튼 */}
+        <button onClick={handleLocateMe}
+          className="hidden md:flex absolute bottom-6 right-6 z-[1000] w-11 h-11 rounded-full bg-white shadow-lg items-center justify-center hover:bg-gray-50 transition-colors border border-gray-200">
+          <Navigation size={18} className="text-gray-600" />
+        </button>
+
         {/* 모바일 상단 바 */}
-        <div className="md:hidden absolute top-0 left-0 right-0 z-[1000] px-4 pt-4">
+        <div className="md:hidden absolute top-0 left-0 right-0 z-[1000] px-4 pt-4 space-y-2">
           <div className="flex items-center gap-2 bg-white rounded-2xl px-4 py-3 shadow-lg">
             <div className="w-6 h-6 rounded-lg flex items-center justify-center"
               style={{ backgroundColor: COLORS.primary }}>
@@ -411,7 +507,30 @@ useEffect(() => {
               <RotateCcw size={16} className="text-gray-400" />
             </button>
           </div>
+          {/* 플로팅 필터 칩 */}
+          <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+            {FILTERS.map(f => {
+              const isOn = activeFilters.includes(f.id);
+              return (
+                <button key={f.id} onClick={() => handleFilterToggle(f.id)}
+                  className="shrink-0 px-4 py-2 rounded-full text-sm font-semibold border transition-all shadow-sm"
+                  style={isOn
+                    ? { backgroundColor: f.color, color: 'white', borderColor: f.color }
+                    : { backgroundColor: 'white', color: '#6B7280', borderColor: '#D1D5DB' }
+                  }>
+                  {f.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
+
+        {/* 모바일 현재 위치 버튼 (우하단, 하단 패널 위) */}
+        <button onClick={handleLocateMe}
+          className="md:hidden absolute bottom-[72px] right-4 z-[1000] w-12 h-12 rounded-full flex items-center justify-center shadow-lg border border-gray-200"
+          style={{ backgroundColor: COLORS.primary }}>
+          <Navigation size={20} color="white" />
+        </button>
 
         {/* 모바일 하단 패널 */}
         <div className={`md:hidden absolute bottom-0 left-0 right-0 z-[1000] bg-white rounded-t-3xl shadow-2xl transition-all duration-300 ${bottomOpen ? 'max-h-[82vh]' : 'max-h-[56px]'} overflow-hidden`}>
@@ -431,12 +550,6 @@ useEffect(() => {
                 onSelect={(p) => setPoints(prev => ({ ...prev, start: p }))} />
               <LocationSearch label="도착지" placeholder="예: 종각역"
                 onSelect={(p) => setPoints(prev => ({ ...prev, end: p }))} />
-            </div>
-
-            {/* 필터 칩 */}
-            <div className="mb-3">
-              <p className="text-xs text-gray-400 font-medium mb-2">지도 레이어</p>
-              <FilterChips />
             </div>
 
             {/* 페르소나 + 시간 */}
@@ -496,18 +609,20 @@ useEffect(() => {
                 <div className="rounded-2xl p-4 mb-2 border-2 cursor-pointer hover:opacity-90 transition-opacity"
                   style={{ backgroundColor: COLORS.primary_light, borderColor: COLORS.primary }}
                   onClick={toggleSafeRoute}>
-                  <div className="flex justify-between items-center mb-2">
+                  <div className="flex justify-between items-start mb-2">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-bold text-gray-800">안심 경로</span>
                       <span className="text-xs px-2 py-0.5 rounded-full text-white"
                         style={{ backgroundColor: COLORS.primary }}>추천</span>
                     </div>
-                    <span className="text-sm font-bold text-gray-800">
-                      {Math.round(routeData.total_distance_meters)}m
-                    </span>
+                    <div className="text-right">
+                      <div className="text-sm font-bold text-gray-800">{walkingMins(routeData.total_distance_meters)} 분</div>
+                      <div className="text-xs text-gray-400">{fmtDist(routeData.total_distance_meters)}</div>
+                    </div>
                   </div>
                   <div className="mb-2"><Badge type={getRouteBadgeType(routeData?.route_analysis?.scores)} /></div>
-                  <p className="text-xs text-gray-600 leading-relaxed line-clamp-3">
+                  <SegmentBar geojson={routeData.geojson} />
+                  <p className="text-xs text-gray-600 leading-relaxed line-clamp-3 mt-2">
                     {routeData.route_analysis?.summary}
                   </p>
                 </div>
@@ -539,9 +654,10 @@ useEffect(() => {
                     onClick={toggleGeneralRoute}>
                     <div className="flex justify-between items-start mb-2">
                       <span className="text-sm font-bold text-gray-800">일반 최단 경로</span>
-                      <span className="text-sm font-bold text-gray-800">
-                        {tmapRouteData.totalDistance}m
-                      </span>
+                      <div className="text-right">
+                        <div className="text-sm font-bold text-gray-800">{walkingMins(tmapRouteData.totalDistance)} 분</div>
+                        <div className="text-xs text-gray-400">{fmtDist(tmapRouteData.totalDistance)}</div>
+                      </div>
                     </div>
                     <Badge type="danger" />
                   </div>
