@@ -6,6 +6,7 @@ export default function TmapView({
   policeStations = [], cctvList = [], emergencyList = [], dangerZones = [],
   highlightGeneralRoute = false,
   onMapClick,
+  onDangerMarkerClick,
   userLocation,
   locateTrigger,
 }) {
@@ -15,9 +16,11 @@ export default function TmapView({
   const tmapPolylineRef  = useRef(null);
   const markersRef       = useRef([]);
   const onMapClickRef    = useRef(onMapClick);
+  const onDangerClickRef = useRef(onDangerMarkerClick);
   const userMarkerRef    = useRef(null);
 
   useEffect(() => { onMapClickRef.current = onMapClick; }, [onMapClick]);
+  useEffect(() => { onDangerClickRef.current = onDangerMarkerClick; }, [onDangerMarkerClick]);
 
   useEffect(() => {
     if (!window.Tmapv2 || mapInstance.current) return;
@@ -228,22 +231,47 @@ export default function TmapView({
         });
       }, 100);
 
-      // 위험 요소 마커
+      // 로드뷰 트리거 마커: 급경사 구간 + 도로파손 민원 지점만 (클릭 시 네이버 로드뷰 모달)
       const warningSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">
         <circle cx="14" cy="14" r="13" fill="#FB923C" stroke="#ffffff" stroke-width="2"/>
         <text x="14" y="19" font-size="14" font-weight="bold" fill="white" text-anchor="middle">!</text>
       </svg>`;
       const warningIconUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(warningSvg)}`;
 
+      const roadviewPoints = [];
+
+      // (a) 급경사 구간 (slope_risk >= 0.7 → 경사 7도 이상) → 구간 중점
+      routeData.geojson.features.forEach(f => {
+        if ((f.properties?.slope_risk ?? 0) < 0.7) return;
+        const coords = f.geometry?.coordinates;
+        if (!coords || coords.length === 0) return;
+        const mid = coords[Math.floor(coords.length / 2)];
+        roadviewPoints.push({
+          lat: mid[1], lng: mid[0],
+          type: '급경사 구간', detail: '경사가 가파른 구간입니다.'
+        });
+      });
+
+      // (b) 도로파손/시설물 민원 지점
       (routeData.route_analysis?.markers ?? []).forEach(m => {
         if (!m.lat || !m.lng) return;
-        newMarkers.push(new window.Tmapv2.Marker({
-          position: new window.Tmapv2.LatLng(m.lat, m.lng),
+        if (!/파손|시설물/.test(m.type || '')) return;
+        roadviewPoints.push({ lat: m.lat, lng: m.lng, type: m.type, detail: m.detail });
+      });
+
+      roadviewPoints.forEach(p => {
+        const dangerMarker = new window.Tmapv2.Marker({
+          position: new window.Tmapv2.LatLng(p.lat, p.lng),
           icon: warningIconUrl,
           iconSize: new window.Tmapv2.Size(28, 28),
           offset: new window.Tmapv2.Point(14, 14),
-          title: `${m.type}: ${m.detail}`, map
-        }));
+          title: `${p.type}: ${p.detail}`, map
+        });
+        dangerMarker.addListener('click', () => {
+          if (onDangerClickRef.current)
+            onDangerClickRef.current({ lat: p.lat, lng: p.lng, type: p.type, detail: p.detail });
+        });
+        newMarkers.push(dangerMarker);
       });
     }
 
