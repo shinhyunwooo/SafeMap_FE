@@ -159,6 +159,7 @@ useEffect(() => {
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [userLocation,   setUserLocation]   = useState(null);
   const [locateTrigger,  setLocateTrigger]  = useState(0);
+  const [isLocating,     setIsLocating]     = useState(false);
   const [showResult,     setShowResult]     = useState(false);
   const [showSafeTBT,    setShowSafeTBT]    = useState(false);
   const [showTmapTBT,    setShowTmapTBT]    = useState(false);
@@ -172,6 +173,7 @@ useEffect(() => {
   const [selectedReport,  setSelectedReport]  = useState(null);
   const clickLockRef = useRef(0);
   const mobileSearchHistoryRef = useRef(false);
+  const locateRequestRef = useRef(0);
 
   const openMobileSearch = () => {
     setMobileSearchOpen(true);
@@ -381,14 +383,51 @@ useEffect(() => {
     setReportDraft(null);
   };
 
+  const applyUserLocation = (pos) => {
+    setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+    setLocateTrigger(t => t + 1);
+  };
+
   const handleLocateMe = () => {
+    if (!navigator.geolocation) {
+      alert("위치 기능을 사용할 수 없습니다.");
+      return;
+    }
+
+    const requestId = locateRequestRef.current + 1;
+    locateRequestRef.current = requestId;
+    setIsLocating(true);
+
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-        setLocateTrigger(t => t + 1);
+        if (locateRequestRef.current !== requestId) return;
+        applyUserLocation(pos);
+        setIsLocating(false);
+
+        navigator.geolocation.getCurrentPosition(
+          (freshPos) => {
+            if (locateRequestRef.current === requestId) applyUserLocation(freshPos);
+          },
+          () => {},
+          { enableHighAccuracy: true, maximumAge: 0, timeout: 8000 }
+        );
       },
-      () => alert("위치 접근 권한이 필요합니다."),
-      { enableHighAccuracy: true }
+      () => {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            if (locateRequestRef.current !== requestId) return;
+            applyUserLocation(pos);
+            setIsLocating(false);
+          },
+          () => {
+            if (locateRequestRef.current !== requestId) return;
+            setIsLocating(false);
+            alert("위치 접근 권한이 필요합니다.");
+          },
+          { enableHighAccuracy: true, maximumAge: 0, timeout: 8000 }
+        );
+      },
+      { enableHighAccuracy: false, maximumAge: 60000, timeout: 3000 }
     );
   };
 
@@ -662,8 +701,9 @@ useEffect(() => {
 
         {/* 데스크탑 현재 위치 버튼 */}
         <button onClick={handleLocateMe}
+          disabled={isLocating}
           className="hidden md:flex absolute bottom-6 right-6 z-[1000] w-11 h-11 rounded-full bg-white shadow-lg items-center justify-center hover:bg-gray-50 transition-colors border border-gray-200">
-          <Navigation size={18} className="text-gray-600" />
+          <Navigation size={18} className={`text-gray-600 ${isLocating ? 'animate-spin' : ''}`} />
         </button>
 
         {/* 모바일 상단 바 */}
@@ -783,9 +823,10 @@ useEffect(() => {
 
         {/* 모바일 현재 위치 버튼 (우하단, 하단 패널 위) */}
         <button onClick={handleLocateMe}
+          disabled={isLocating}
           className={`md:hidden absolute right-4 z-[1000] w-12 h-12 rounded-full flex items-center justify-center shadow-lg border border-gray-200 ${showResult ? 'bottom-[72px]' : 'bottom-8'}`}
           style={{ backgroundColor: COLORS.primary }}>
-          <Navigation size={20} color="white" />
+          <Navigation size={20} color="white" className={isLocating ? 'animate-spin' : ''} />
         </button>
 
         {/* 모바일 하단 패널 */}
