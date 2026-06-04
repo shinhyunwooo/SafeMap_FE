@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { searchPlaces } from '../../services/tmapService';
 
-export default function LocationSearch({ label, placeholder, onSelect }) {
-    const [keyword, setKeyword] = useState('');
+export default function LocationSearch({ label, placeholder, value = '', onSelect }) {
+    const [keyword, setKeyword] = useState(value);
     const [results, setResults] = useState([]);
     const [isSearching, setIsSearching] = useState(false);
 
@@ -14,7 +14,7 @@ export default function LocationSearch({ label, placeholder, onSelect }) {
                 const places = await searchPlaces(keyword);
                 setResults(places); // 검색 결과 목록 저장
                 if (places.length === 0) alert("검색 결과가 없습니다.");
-            } catch (error) {
+            } catch {
                 alert("검색 중 오류가 발생했습니다.");
             } finally {
                 setIsSearching(false);
