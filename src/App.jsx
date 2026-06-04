@@ -1,12 +1,15 @@
 import { useState, useRef, useEffect } from 'react';
 import { fetchSafeRoute } from './services/routeService';
 import { fetchTmapPedestrianRoute, fetchNearbyPolice, fetchNearbyCCTV, fetchNearbyEmergency } from './services/tmapService';
+import { fetchReports } from './services/reportService';
 import TmapView from './components/map/TmapView';
 import RoadviewModal from './components/navigation/RoadviewModal';
+import ReportModal from './components/map/ReportModal';
+import ReportDetailModal from './components/map/ReportDetailModal';
 import LocationSearch from './components/route/LocationSearch';
 import ControlPanel from './components/route/ControlPanel';
 import { COLORS, BADGE_STYLES, getRouteBadgeType } from './styles/colors';
-import { RotateCcw, Shield, ChevronUp, ChevronDown, Navigation } from 'lucide-react';
+import { RotateCcw, Shield, ChevronUp, ChevronDown, Navigation, Megaphone } from 'lucide-react';
 
 const PERSONA_LABEL = {
   general: { text: '일반',     color: COLORS.safe },
@@ -18,6 +21,7 @@ const FILTERS = [
   { id: 'cctv',      label: 'CCTV',    color: '#3B82F6' },
   { id: 'emergency', label: '응급기관', color: '#EF4444' },
   { id: 'police',    label: '경찰서',   color: '#1E3A8A' },
+  { id: 'report',    label: '주민 제보', color: '#F97316' },
   //{ id: 'danger',    label: '위험 범역', color: '#FB923C' },
 ];
 
@@ -118,6 +122,12 @@ useEffect(() => {
   const [showTmapTBT,    setShowTmapTBT]    = useState(false);
   const [highlightGeneralRoute, setHighlightGeneralRoute] = useState(false);
   const [roadviewPoint,  setRoadviewPoint]  = useState(null);
+  // 제보 기능 상태
+  const [reports,         setReports]         = useState([]);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportDraft,     setReportDraft]     = useState(null);   // {lat,lng}
+  const [reportPickMode,  setReportPickMode]  = useState(false);
+  const [selectedReport,  setSelectedReport]  = useState(null);
   const clickLockRef = useRef(0);
 
   const handleMapClick = (latlng) => {
@@ -205,6 +215,7 @@ useEffect(() => {
       if (filterId === 'cctv')      setCctvList([]);
       if (filterId === 'emergency') setEmergencyList([]);
       if (filterId === 'danger')    setDangerZones([]);
+      if (filterId === 'report')    setReports([]);
       return;
     }
     setActiveFilters(prev => [...prev, filterId]);
@@ -225,6 +236,56 @@ useEffect(() => {
       const markers = routeData?.route_analysis?.markers ?? [];
       setDangerZones(markers.filter(m => m.lat && m.lng));
     }
+    if (filterId === 'report') {
+      const data = await fetchReports({ lat, lng, radius: 1500 });
+      setReports(data);
+    }
+  };
+
+  // ── 제보 기능 핸들러 ──────────────────────────
+  // 제보 버튼: 현재 위치를 기본 핀으로 잡고 모달 오픈
+  const openReportModal = () => {
+    setSelectedReport(null);
+    setReportPickMode(false);
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => setReportDraft({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        () => setReportDraft(prev => prev ?? getSearchCoord()),  // 거부 시 경로중심/기본
+        { enableHighAccuracy: true, timeout: 5000 }
+      );
+    } else {
+      setReportDraft(prev => prev ?? getSearchCoord());
+    }
+    setShowReportModal(true);
+  };
+
+  const handleUseCurrentLocation = () => {
+    if (!navigator.geolocation) { alert('위치 기능을 사용할 수 없습니다.'); return; }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => setReportDraft({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => alert('위치 접근 권한이 필요합니다.'),
+      { enableHighAccuracy: true }
+    );
+  };
+
+  // "지도에서 선택" → 모달 잠시 숨기고 픽 모드 진입
+  const handlePickOnMap = () => {
+    setReportPickMode(true);
+    setShowReportModal(false);
+  };
+
+  // 픽 모드에서 지도 탭 → 위치 확정 후 모달 복귀
+  const handleReportPick = (latlng) => {
+    setReportDraft(latlng);
+    setReportPickMode(false);
+    setShowReportModal(true);
+  };
+
+  // 등록 성공 → 즉시 마커 반영(+'주민 제보' 필터 자동 ON)
+  const handleReportSubmitted = (saved) => {
+    setReports(prev => [saved, ...prev]);
+    setActiveFilters(prev => prev.includes('report') ? prev : [...prev, 'report']);
+    setReportDraft(null);
   };
 
   const handleLocateMe = () => {
@@ -242,6 +303,7 @@ useEffect(() => {
     setPoints({ start: null, end: null });
     setRouteData(null); setTmapRouteData(null);
     setPoliceStations([]); setCctvList([]); setEmergencyList([]); setDangerZones([]);
+    setReports([]); setReportPickMode(false); setShowReportModal(false); setReportDraft(null);
     setActiveFilters([]);
     setShowResult(false); setShowSafeTBT(false); setShowTmapTBT(false);
     setHighlightGeneralRoute(false); setBottomOpen(false);
@@ -484,9 +546,14 @@ useEffect(() => {
           cctvList={cctvList}
           emergencyList={emergencyList}
           dangerZones={dangerZones}
+          reports={activeFilters.includes('report') ? reports : []}
+          reportDraftPoint={reportPickMode ? reportDraft : (showReportModal ? reportDraft : null)}
+          reportPickMode={reportPickMode}
           highlightGeneralRoute={highlightGeneralRoute}
           onMapClick={handleMapClick}
           onDangerMarkerClick={setRoadviewPoint}
+          onReportPick={handleReportPick}
+          onReportMarkerClick={setSelectedReport}
           userLocation={userLocation}
           locateTrigger={locateTrigger}
         />
@@ -495,6 +562,47 @@ useEffect(() => {
         {roadviewPoint && (
           <RoadviewModal point={roadviewPoint} onClose={() => setRoadviewPoint(null)} />
         )}
+
+        {/* 제보 작성 모달 */}
+        {showReportModal && (
+          <ReportModal
+            draftPoint={reportDraft}
+            onPickOnMap={handlePickOnMap}
+            onUseCurrentLocation={handleUseCurrentLocation}
+            onSubmitted={handleReportSubmitted}
+            onClose={() => { setShowReportModal(false); setReportDraft(null); }}
+          />
+        )}
+
+        {/* 제보 상세 모달 */}
+        {selectedReport && (
+          <ReportDetailModal report={selectedReport} onClose={() => setSelectedReport(null)} />
+        )}
+
+        {/* 제보 위치 선택 모드 배너 */}
+        {reportPickMode && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[2000] flex items-center gap-3 bg-white rounded-full shadow-lg px-4 py-2.5 border border-orange-200">
+            <span className="text-sm font-medium text-gray-700">📍 제보할 위치를 지도에서 탭하세요</span>
+            <button onClick={() => { setReportPickMode(false); setShowReportModal(true); }}
+              className="text-xs font-semibold px-2 py-1 rounded-full bg-gray-100 text-gray-500">
+              취소
+            </button>
+          </div>
+        )}
+
+        {/* 제보하기 FAB (데스크탑: 현재위치 버튼 왼쪽) */}
+        <button onClick={openReportModal}
+          className="hidden md:flex absolute bottom-6 right-20 z-[1000] items-center gap-1.5 h-11 px-4 rounded-full shadow-lg text-white font-semibold text-sm hover:opacity-90 transition-opacity"
+          style={{ backgroundColor: '#F97316' }}>
+          <Megaphone size={16} /> 제보하기
+        </button>
+
+        {/* 제보하기 FAB (모바일: 현재위치 버튼 위) */}
+        <button onClick={openReportModal}
+          className="md:hidden absolute bottom-[132px] right-4 z-[1000] w-12 h-12 rounded-full flex items-center justify-center shadow-lg"
+          style={{ backgroundColor: '#F97316' }}>
+          <Megaphone size={20} color="white" />
+        </button>
 
         {/* 데스크탑 현재 위치 버튼 */}
         <button onClick={handleLocateMe}
