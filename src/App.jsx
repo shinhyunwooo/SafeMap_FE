@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { fetchSafeRoute } from './services/routeService';
 import { fetchTmapPedestrianRoute, fetchNearbyPolice, fetchNearbyCCTV, fetchNearbyEmergency } from './services/tmapService';
 import TmapView from './components/map/TmapView';
+import RoadviewModal from './components/navigation/RoadviewModal';
 import LocationSearch from './components/route/LocationSearch';
 import ControlPanel from './components/route/ControlPanel';
 import { COLORS, BADGE_STYLES, getRouteBadgeType } from './styles/colors';
@@ -116,6 +117,7 @@ useEffect(() => {
   const [showSafeTBT,    setShowSafeTBT]    = useState(false);
   const [showTmapTBT,    setShowTmapTBT]    = useState(false);
   const [highlightGeneralRoute, setHighlightGeneralRoute] = useState(false);
+  const [roadviewPoint,  setRoadviewPoint]  = useState(null);
   const clickLockRef = useRef(0);
 
   const handleMapClick = (latlng) => {
@@ -484,9 +486,15 @@ useEffect(() => {
           dangerZones={dangerZones}
           highlightGeneralRoute={highlightGeneralRoute}
           onMapClick={handleMapClick}
+          onDangerMarkerClick={setRoadviewPoint}
           userLocation={userLocation}
           locateTrigger={locateTrigger}
         />
+
+        {/* 위험마커 클릭 시 네이버 로드뷰 모달 */}
+        {roadviewPoint && (
+          <RoadviewModal point={roadviewPoint} onClose={() => setRoadviewPoint(null)} />
+        )}
 
         {/* 데스크탑 현재 위치 버튼 */}
         <button onClick={handleLocateMe}

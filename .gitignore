@@ -16,6 +16,7 @@ dist-ssr/
 # 에디터
 .vscode/
 .idea/
+.claude/
 *.suo
 *.ntvs*
 *.njsproj
