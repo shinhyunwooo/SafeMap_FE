@@ -4,23 +4,34 @@ import { COLORS } from '../../styles/colors';
 export default function TmapView({
   startCoord, endCoord, routeData, tmapRouteData,
   policeStations = [], cctvList = [], emergencyList = [], dangerZones = [],
+  reports = [], reportDraftPoint = null, reportPickMode = false,
   highlightGeneralRoute = false,
   onMapClick,
   onDangerMarkerClick,
+  onReportPick,
+  onReportMarkerClick,
   userLocation,
   locateTrigger,
 }) {
-  const mapRef           = useRef(null);
-  const mapInstance      = useRef(null);
-  const safePolylinesRef = useRef([]);
-  const tmapPolylineRef  = useRef(null);
-  const markersRef       = useRef([]);
-  const onMapClickRef    = useRef(onMapClick);
-  const onDangerClickRef = useRef(onDangerMarkerClick);
-  const userMarkerRef    = useRef(null);
+  const mapRef             = useRef(null);
+  const mapInstance        = useRef(null);
+  const safePolylinesRef   = useRef([]);
+  const tmapPolylineRef    = useRef(null);
+  const markersRef         = useRef([]);
+  const reportMarkersRef   = useRef([]);
+  const reportDraftRef     = useRef(null);
+  const onMapClickRef      = useRef(onMapClick);
+  const onDangerClickRef   = useRef(onDangerMarkerClick);
+  const onReportPickRef    = useRef(onReportPick);
+  const onReportClickRef   = useRef(onReportMarkerClick);
+  const reportPickModeRef  = useRef(reportPickMode);
+  const userMarkerRef      = useRef(null);
 
   useEffect(() => { onMapClickRef.current = onMapClick; }, [onMapClick]);
   useEffect(() => { onDangerClickRef.current = onDangerMarkerClick; }, [onDangerMarkerClick]);
+  useEffect(() => { onReportPickRef.current = onReportPick; }, [onReportPick]);
+  useEffect(() => { onReportClickRef.current = onReportMarkerClick; }, [onReportMarkerClick]);
+  useEffect(() => { reportPickModeRef.current = reportPickMode; }, [reportPickMode]);
 
   useEffect(() => {
     if (!window.Tmapv2 || mapInstance.current) return;
@@ -29,8 +40,14 @@ export default function TmapView({
       width: "100%", height: "100%", zoom: 14, httpsMode: true
     });
     mapInstance.current.addListener("click", (e) => {
-      if (onMapClickRef.current && e.latLng)
-        onMapClickRef.current({ lat: e.latLng.lat(), lng: e.latLng.lng() });
+      if (!e.latLng) return;
+      const ll = { lat: e.latLng.lat(), lng: e.latLng.lng() };
+      // 제보 위치 선택 모드면 경로 지정 대신 제보 핀을 찍는다
+      if (reportPickModeRef.current) {
+        onReportPickRef.current?.(ll);
+        return;
+      }
+      onMapClickRef.current?.(ll);
     });
   }, []);
 
@@ -314,6 +331,57 @@ export default function TmapView({
     if (!mapInstance.current || !userLocation || locateTrigger === 0) return;
     mapInstance.current.setCenter(new window.Tmapv2.LatLng(userLocation.lat, userLocation.lng));
   }, [locateTrigger]);
+
+  // 사용자 제보 마커 레이어 (별도 ref로 관리 → 메인 마커 갱신에 안 지워짐)
+  useEffect(() => {
+    if (!mapInstance.current) return;
+    const map = mapInstance.current;
+    reportMarkersRef.current.forEach(m => m.setMap(null));
+    reportMarkersRef.current = [];
+
+    const reportSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="34" height="34" viewBox="0 0 34 34">
+      <circle cx="17" cy="17" r="15" fill="#F97316" stroke="#ffffff" stroke-width="2.5"/>
+      <path d="M11 14 L19 11 L19 21 L11 18 Z" fill="white"/>
+      <rect x="19" y="13" width="3" height="6" rx="1" fill="white"/>
+    </svg>`;
+    const reportIconUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(reportSvg)}`;
+
+    reports.forEach(r => {
+      if (!r.lat || !r.lng) return;
+      const marker = new window.Tmapv2.Marker({
+        position: new window.Tmapv2.LatLng(r.lat, r.lng),
+        icon: reportIconUrl,
+        iconSize: new window.Tmapv2.Size(34, 34),
+        offset: new window.Tmapv2.Point(17, 17),
+        title: `[제보] ${(r.categories ?? []).join(', ')}`,
+        map, zIndex: 1500,
+      });
+      marker.addListener('click', () => onReportClickRef.current?.(r));
+      reportMarkersRef.current.push(marker);
+    });
+  }, [reports]);
+
+  // 제보 작성 중 위치(드래프트 핀) 표시
+  useEffect(() => {
+    if (!mapInstance.current) return;
+    const map = mapInstance.current;
+    if (reportDraftRef.current) { reportDraftRef.current.setMap(null); reportDraftRef.current = null; }
+    if (!reportDraftPoint) return;
+
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="44" height="56" viewBox="0 0 44 56">
+      <path d="M22 0 C9.85 0 0 9.85 0 22 C0 37.5 22 56 22 56 C22 56 44 37.5 44 22 C44 9.85 34.15 0 22 0 Z"
+        fill="#F97316" stroke="#ffffff" stroke-width="2.5"/>
+      <circle cx="22" cy="21" r="7" fill="white"/>
+    </svg>`;
+    const iconUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+    reportDraftRef.current = new window.Tmapv2.Marker({
+      position: new window.Tmapv2.LatLng(reportDraftPoint.lat, reportDraftPoint.lng),
+      icon: iconUrl,
+      iconSize: new window.Tmapv2.Size(44, 56),
+      offset: new window.Tmapv2.Point(22, 56),
+      map, zIndex: 2500,
+    });
+  }, [reportDraftPoint]);
 
   return <div ref={mapRef} className="w-full h-full z-0" />;
 }
