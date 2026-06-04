@@ -34,15 +34,16 @@ export default function RoadviewModal({ point, onClose }) {
           style={{ width: '100%', height: '300px' }} />
 
         {/* 안내 푸터 */}
-        <div className="px-4 py-2 bg-gray-50 border-t border-gray-100 flex items-center justify-between gap-2">
-          <p className="text-[11px] text-gray-400">
-            ※ 실시간 영상이 아닌 네이버 거리뷰 과거 촬영 이미지입니다.
+        <div className="px-4 py-2 bg-gray-50 border-t border-gray-100">
+          <p className="text-[11px] text-gray-400 leading-snug">
+            ※ 거리뷰 과거 이미지로 제보 시점과 다를 수 있습니다
+            {photoDate && (
+              <>
+                <span className="mx-1 text-gray-300">·</span>
+                <span className="text-gray-500 font-medium">촬영 {photoDate}</span>
+              </>
+            )}
           </p>
-          {photoDate && (
-            <span className="shrink-0 text-[11px] font-medium text-gray-500">
-              촬영: {photoDate}
-            </span>
-          )}
         </div>
       </div>
     </div>
