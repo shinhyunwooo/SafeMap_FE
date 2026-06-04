@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { fetchSafeRoute } from './services/routeService';
-import { fetchTmapPedestrianRoute, fetchNearbyPolice, fetchNearbyCCTV, fetchNearbyEmergency } from './services/tmapService';
+import { fetchTmapPedestrianRoute, fetchNearbyPolice, fetchNearbyCCTV, fetchNearbyEmergency, reverseGeocode } from './services/tmapService';
 import { fetchReports } from './services/reportService';
 import TmapView from './components/map/TmapView';
 import RoadviewModal from './components/navigation/RoadviewModal';
@@ -9,7 +9,7 @@ import ReportDetailModal from './components/map/ReportDetailModal';
 import LocationSearch from './components/route/LocationSearch';
 import ControlPanel from './components/route/ControlPanel';
 import { COLORS, BADGE_STYLES, getRouteBadgeType } from './styles/colors';
-import { RotateCcw, Shield, ChevronUp, ChevronDown, Navigation, Megaphone, Search } from 'lucide-react';
+import { RotateCcw, Shield, ChevronUp, ChevronDown, Navigation, Megaphone, Search, ArrowLeft } from 'lucide-react';
 
 const PERSONA_LABEL = {
   general: { text: '일반',     color: COLORS.safe },
@@ -171,19 +171,69 @@ useEffect(() => {
   const [reportPickMode,  setReportPickMode]  = useState(false);
   const [selectedReport,  setSelectedReport]  = useState(null);
   const clickLockRef = useRef(0);
+  const mobileSearchHistoryRef = useRef(false);
 
-  const handleMapClick = (latlng) => {
+  const openMobileSearch = () => {
+    setMobileSearchOpen(true);
+    if (!mobileSearchHistoryRef.current) {
+      window.history.pushState({ mobileSearchOpen: true }, '');
+      mobileSearchHistoryRef.current = true;
+    }
+  };
+
+  const closeMobileSearch = ({ syncHistory = true } = {}) => {
+    setMobileSearchOpen(false);
+    if (syncHistory && mobileSearchHistoryRef.current && window.history.state?.mobileSearchOpen) {
+      mobileSearchHistoryRef.current = false;
+      window.history.back();
+      return;
+    }
+    mobileSearchHistoryRef.current = false;
+  };
+
+  useEffect(() => {
+    const handlePopState = () => {
+      if (mobileSearchHistoryRef.current) {
+        mobileSearchHistoryRef.current = false;
+        setMobileSearchOpen(false);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const resolveMapPoint = async (latlng) => {
+    const name = await reverseGeocode(latlng.lat, latlng.lng);
+    return { ...latlng, name };
+  };
+
+  const handleMapClick = async (latlng) => {
+    if (mobileSearchOpen) {
+      closeMobileSearch();
+      return;
+    }
     const now = Date.now();
     if (now - clickLockRef.current < 400) return;
     clickLockRef.current = now;
-    setPoints((prev) => {
-      if (!prev.start) return { start: latlng, end: null };
-      if (!prev.end)   return { ...prev, end: latlng };
-      setRouteData(null); setTmapRouteData(null);
-      setPoliceStations([]); setCctvList([]); setEmergencyList([]); setDangerZones([]);
-      setActiveFilters([]);
-      return { start: latlng, end: null };
-    });
+    const point = await resolveMapPoint(latlng);
+
+    if (!points.start) {
+      setPoints({ start: point, end: null });
+      return;
+    }
+
+    if (!points.end) {
+      setPoints(prev => ({ ...prev, end: point }));
+      if (window.matchMedia('(max-width: 767px)').matches) {
+        openMobileSearch();
+      }
+      return;
+    }
+
+    setRouteData(null); setTmapRouteData(null);
+    setPoliceStations([]); setCctvList([]); setEmergencyList([]); setDangerZones([]);
+    setActiveFilters([]);
+    setPoints({ start: point, end: null });
   };
 
   const handleSearch = async () => {
@@ -208,7 +258,7 @@ useEffect(() => {
       setShowTmapTBT(false);
       setHighlightGeneralRoute(false);
       setBottomOpen(true);
-      setMobileSearchOpen(false);
+      closeMobileSearch();
       // 필터 켜져있으면 위험범역 데이터 갱신
       if (activeFilters.includes('danger')) {
         const markers = safeResult?.route_analysis?.markers ?? [];
@@ -349,7 +399,7 @@ useEffect(() => {
     setReports([]); setReportPickMode(false); setShowReportModal(false); setReportDraft(null);
     setActiveFilters([]);
     setShowResult(false); setShowSafeTBT(false); setShowTmapTBT(false);
-    setHighlightGeneralRoute(false); setBottomOpen(false); setMobileSearchOpen(false);
+    setHighlightGeneralRoute(false); setBottomOpen(false); closeMobileSearch();
   };
 
   const renderFilterChips = () => (
@@ -397,8 +447,12 @@ useEffect(() => {
         {/* 검색 */}
         <div className="px-6 py-4 space-y-3 border-b border-gray-100">
           <LocationSearch label="출발지" placeholder="예: 광화문역"
+            key={`desktop-start-${points.start?.lat ?? 'none'}-${points.start?.lng ?? 'none'}-${points.start?.name ?? ''}`}
+            value={points.start?.name ?? ''}
             onSelect={(p) => setPoints(prev => ({ ...prev, start: p }))} />
           <LocationSearch label="도착지" placeholder="예: 종각역"
+            key={`desktop-end-${points.end?.lat ?? 'none'}-${points.end?.lng ?? 'none'}-${points.end?.name ?? ''}`}
+            value={points.end?.name ?? ''}
             onSelect={(p) => setPoints(prev => ({ ...prev, end: p }))} />
         </div>
 
@@ -621,7 +675,7 @@ useEffect(() => {
             </div>
             <button
               type="button"
-              onClick={() => setMobileSearchOpen(true)}
+              onClick={openMobileSearch}
               className="min-w-0 flex-1 text-left"
             >
               {showResult && points.start && points.end ? (
@@ -646,10 +700,24 @@ useEffect(() => {
           </div>
           {mobileSearchOpen && (
             <div className="bg-white rounded-2xl shadow-lg p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => closeMobileSearch()}
+                  className="w-8 h-8 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center"
+                >
+                  <ArrowLeft size={16} />
+                </button>
+                <span className="text-sm font-bold text-gray-800">경로 입력</span>
+              </div>
               <div className="space-y-2">
                 <LocationSearch label="출발지" placeholder="예: 광화문역"
+                  key={`mobile-start-${points.start?.lat ?? 'none'}-${points.start?.lng ?? 'none'}-${points.start?.name ?? ''}`}
+                  value={points.start?.name ?? ''}
                   onSelect={(p) => setPoints(prev => ({ ...prev, start: p }))} />
                 <LocationSearch label="도착지" placeholder="예: 종각역"
+                  key={`mobile-end-${points.end?.lat ?? 'none'}-${points.end?.lng ?? 'none'}-${points.end?.name ?? ''}`}
+                  value={points.end?.name ?? ''}
                   onSelect={(p) => setPoints(prev => ({ ...prev, end: p }))} />
               </div>
 

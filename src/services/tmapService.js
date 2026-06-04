@@ -59,6 +59,48 @@ export const searchPlaces = async (keyword) => {
     }
 };
 
+export const reverseGeocode = async (lat, lng) => {
+    try {
+        const response = await tmapClient.get('/geo/reversegeocoding', {
+            params: {
+                version: 1,
+                lat: lat.toString(),
+                lon: lng.toString(),
+                coordType: "WGS84GEO",
+                addressType: "A10"
+            }
+        });
+        const info = response.data?.addressInfo;
+        const fullAddress = info?.fullAddress
+            || [info?.city_do, info?.gu_gun, info?.legalDong, info?.roadName, info?.buildingIndex]
+                .filter(Boolean)
+                .join(' ');
+
+        return formatShortAddress(fullAddress, info) || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    } catch (error) {
+        console.error('좌표 주소 변환 실패:', error);
+        return `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    }
+};
+
+const formatShortAddress = (fullAddress, info = {}) => {
+    const parts = String(fullAddress || '')
+        .split(',')
+        .map(part => part.trim())
+        .filter(Boolean);
+    const best = parts.at(-1) || fullAddress;
+    const city = info?.city_do;
+    const district = info?.gu_gun;
+    const prefix = [city, district].filter(Boolean).join(' ');
+
+    return String(best || '')
+        .replace(prefix, '')
+        .replace(city || '', '')
+        .replace(district || '', '')
+        .replace(/\s+/g, ' ')
+        .trim();
+};
+
 // 보행자 경로 탐색
 export const fetchTmapPedestrianRoute = async ({ startLat, startLng, endLat, endLng }) => {
     try {
