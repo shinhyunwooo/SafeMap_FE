@@ -330,7 +330,7 @@ export default function TmapView({
   useEffect(() => {
     if (!mapInstance.current || !userLocation || locateTrigger === 0) return;
     mapInstance.current.setCenter(new window.Tmapv2.LatLng(userLocation.lat, userLocation.lng));
-  }, [locateTrigger]);
+  }, [locateTrigger, userLocation]);
 
   // 사용자 제보 마커 레이어 (별도 ref로 관리 → 메인 마커 갱신에 안 지워짐)
   useEffect(() => {
