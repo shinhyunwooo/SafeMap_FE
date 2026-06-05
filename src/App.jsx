@@ -22,7 +22,7 @@ const FILTERS = [
   { id: 'cctv',      label: 'CCTV',    color: '#3B82F6' },
   { id: 'emergency', label: '응급기관', color: '#EF4444' },
   { id: 'police',    label: '경찰서',   color: '#1E3A8A' },
-  //{ id: 'report',    label: '주민 제보', color: '#F97316' },
+  { id: 'report',    label: '주민 제보', color: '#F97316' },
   //{ id: 'danger',    label: '위험 범역', color: '#FB923C' },
 ];
 
