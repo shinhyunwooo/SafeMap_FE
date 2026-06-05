@@ -6,6 +6,7 @@ import TmapView from './components/map/TmapView';
 import RoadviewModal from './components/navigation/RoadviewModal';
 import ReportModal from './components/map/ReportModal';
 import ReportDetailModal from './components/map/ReportDetailModal';
+import AdminReportsPage from './components/admin/AdminReportsPage';
 import LocationSearch from './components/route/LocationSearch';
 import ControlPanel from './components/route/ControlPanel';
 import { COLORS, BADGE_STYLES, getRouteBadgeType } from './styles/colors';
@@ -21,7 +22,7 @@ const FILTERS = [
   { id: 'cctv',      label: 'CCTV',    color: '#3B82F6' },
   { id: 'emergency', label: '응급기관', color: '#EF4444' },
   { id: 'police',    label: '경찰서',   color: '#1E3A8A' },
-  //{ id: 'report',    label: '주민 제보', color: '#F97316' },
+  { id: 'report',    label: '주민 제보', color: '#F97316' },
   //{ id: 'danger',    label: '위험 범역', color: '#FB923C' },
 ];
 
@@ -458,6 +459,11 @@ useEffect(() => {
       })}
     </div>
   );
+
+  // 관리자 감독 콘솔: URL에 ?admin=1 이면 지도 대신 관리자 페이지 렌더
+  if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('admin') === '1') {
+    return <AdminReportsPage onExit={() => { window.location.href = window.location.pathname; }} />;
+  }
 
   return (
     <div className="h-screen w-screen overflow-hidden flex flex-col md:flex-row"
