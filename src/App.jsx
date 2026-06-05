@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { fetchSafeRoute } from './services/routeService';
-import { fetchTmapPedestrianRoute, fetchNearbyPolice, fetchNearbyCCTV, fetchNearbyEmergency } from './services/tmapService';
+import { fetchTmapPedestrianRoute, fetchNearbyPolice, fetchNearbyCCTV, fetchNearbyEmergency, reverseGeocode } from './services/tmapService';
 import { fetchReports } from './services/reportService';
 import TmapView from './components/map/TmapView';
 import RoadviewModal from './components/navigation/RoadviewModal';
@@ -10,7 +10,7 @@ import AdminReportsPage from './components/admin/AdminReportsPage';
 import LocationSearch from './components/route/LocationSearch';
 import ControlPanel from './components/route/ControlPanel';
 import { COLORS, BADGE_STYLES, getRouteBadgeType } from './styles/colors';
-import { RotateCcw, Shield, ChevronUp, ChevronDown, Navigation, Megaphone } from 'lucide-react';
+import { RotateCcw, Shield, ChevronUp, ChevronDown, Navigation, Megaphone, Search, ArrowLeft } from 'lucide-react';
 
 const PERSONA_LABEL = {
   general: { text: '일반',     color: COLORS.safe },
@@ -22,7 +22,7 @@ const FILTERS = [
   { id: 'cctv',      label: 'CCTV',    color: '#3B82F6' },
   { id: 'emergency', label: '응급기관', color: '#EF4444' },
   { id: 'police',    label: '경찰서',   color: '#1E3A8A' },
-  { id: 'report',    label: '주민 제보', color: '#F97316' },
+  //{ id: 'report',    label: '주민 제보', color: '#F97316' },
   //{ id: 'danger',    label: '위험 범역', color: '#FB923C' },
 ];
 
@@ -67,6 +67,47 @@ function calcSegmentSequence(geojson) {
 
 const walkingMins = (meters) => Math.ceil(meters / 67);
 const fmtDist = (m) => m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)}m`;
+
+const Badge = ({ type }) => {
+  const s = BADGE_STYLES[type] ?? BADGE_STYLES.safe;
+  return (
+    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium"
+      style={{ backgroundColor: s.bg, border: `1px solid ${s.border}`, color: s.text }}>
+      <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: s.text }} />
+      {s.label}
+    </span>
+  );
+};
+
+const SegmentBar = ({ geojson }) => {
+  const seq = calcSegmentSequence(geojson);
+  if (!seq) return null;
+
+  const colorMap = { safe: COLORS.safe, caution: COLORS.caution, warning: COLORS.warning, danger: COLORS.danger };
+
+  // 범례용 레벨별 합산 (경로 순서대로 등장한 레벨만)
+  const totals = {};
+  seq.forEach(s => { totals[s.level] = (totals[s.level] || 0) + s.pct; });
+  const legend = SEGMENT_ORDER.filter(o => totals[o.key] != null);
+
+  return (
+    <div className="mt-2">
+      <div className="flex h-2 rounded-full overflow-hidden">
+        {seq.map((s, i) => (
+          <div key={i} style={{ width: `${s.pct}%`, backgroundColor: colorMap[s.level] }} />
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-x-3 mt-1.5">
+        {legend.map(o => (
+          <span key={o.key} className="flex items-center gap-1 text-xs text-gray-500">
+            <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ backgroundColor: o.color }} />
+            {o.label} {Math.round(totals[o.key])}%
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+};
 
 function App() {
   // 패널 리사이즈 상태
@@ -116,8 +157,10 @@ useEffect(() => {
   const [requestHour,    setRequestHour]    = useState(new Date().getHours());
   const [points,         setPoints]         = useState({ start: null, end: null });
   const [bottomOpen,     setBottomOpen]     = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [userLocation,   setUserLocation]   = useState(null);
   const [locateTrigger,  setLocateTrigger]  = useState(0);
+  const [isLocating,     setIsLocating]     = useState(false);
   const [showResult,     setShowResult]     = useState(false);
   const [showSafeTBT,    setShowSafeTBT]    = useState(false);
   const [showTmapTBT,    setShowTmapTBT]    = useState(false);
@@ -130,19 +173,70 @@ useEffect(() => {
   const [reportPickMode,  setReportPickMode]  = useState(false);
   const [selectedReport,  setSelectedReport]  = useState(null);
   const clickLockRef = useRef(0);
+  const mobileSearchHistoryRef = useRef(false);
+  const locateRequestRef = useRef(0);
 
-  const handleMapClick = (latlng) => {
+  const openMobileSearch = () => {
+    setMobileSearchOpen(true);
+    if (!mobileSearchHistoryRef.current) {
+      window.history.pushState({ mobileSearchOpen: true }, '');
+      mobileSearchHistoryRef.current = true;
+    }
+  };
+
+  const closeMobileSearch = ({ syncHistory = true } = {}) => {
+    setMobileSearchOpen(false);
+    if (syncHistory && mobileSearchHistoryRef.current && window.history.state?.mobileSearchOpen) {
+      mobileSearchHistoryRef.current = false;
+      window.history.back();
+      return;
+    }
+    mobileSearchHistoryRef.current = false;
+  };
+
+  useEffect(() => {
+    const handlePopState = () => {
+      if (mobileSearchHistoryRef.current) {
+        mobileSearchHistoryRef.current = false;
+        setMobileSearchOpen(false);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const resolveMapPoint = async (latlng) => {
+    const name = await reverseGeocode(latlng.lat, latlng.lng);
+    return { ...latlng, name };
+  };
+
+  const handleMapClick = async (latlng) => {
+    if (mobileSearchOpen) {
+      closeMobileSearch();
+      return;
+    }
     const now = Date.now();
     if (now - clickLockRef.current < 400) return;
     clickLockRef.current = now;
-    setPoints((prev) => {
-      if (!prev.start) return { start: latlng, end: null };
-      if (!prev.end)   return { ...prev, end: latlng };
-      setRouteData(null); setTmapRouteData(null);
-      setPoliceStations([]); setCctvList([]); setEmergencyList([]); setDangerZones([]);
-      setActiveFilters([]);
-      return { start: latlng, end: null };
-    });
+    const point = await resolveMapPoint(latlng);
+
+    if (!points.start) {
+      setPoints({ start: point, end: null });
+      return;
+    }
+
+    if (!points.end) {
+      setPoints(prev => ({ ...prev, end: point }));
+      if (window.matchMedia('(max-width: 767px)').matches) {
+        openMobileSearch();
+      }
+      return;
+    }
+
+    setRouteData(null); setTmapRouteData(null);
+    setPoliceStations([]); setCctvList([]); setEmergencyList([]); setDangerZones([]);
+    setActiveFilters([]);
+    setPoints({ start: point, end: null });
   };
 
   const handleSearch = async () => {
@@ -167,6 +261,7 @@ useEffect(() => {
       setShowTmapTBT(false);
       setHighlightGeneralRoute(false);
       setBottomOpen(true);
+      closeMobileSearch();
       // 필터 켜져있으면 위험범역 데이터 갱신
       if (activeFilters.includes('danger')) {
         const markers = safeResult?.route_analysis?.markers ?? [];
@@ -289,14 +384,51 @@ useEffect(() => {
     setReportDraft(null);
   };
 
+  const applyUserLocation = (pos) => {
+    setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+    setLocateTrigger(t => t + 1);
+  };
+
   const handleLocateMe = () => {
+    if (!navigator.geolocation) {
+      alert("위치 기능을 사용할 수 없습니다.");
+      return;
+    }
+
+    const requestId = locateRequestRef.current + 1;
+    locateRequestRef.current = requestId;
+    setIsLocating(true);
+
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-        setLocateTrigger(t => t + 1);
+        if (locateRequestRef.current !== requestId) return;
+        applyUserLocation(pos);
+        setIsLocating(false);
+
+        navigator.geolocation.getCurrentPosition(
+          (freshPos) => {
+            if (locateRequestRef.current === requestId) applyUserLocation(freshPos);
+          },
+          () => {},
+          { enableHighAccuracy: true, maximumAge: 0, timeout: 8000 }
+        );
       },
-      () => alert("위치 접근 권한이 필요합니다."),
-      { enableHighAccuracy: true }
+      () => {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            if (locateRequestRef.current !== requestId) return;
+            applyUserLocation(pos);
+            setIsLocating(false);
+          },
+          () => {
+            if (locateRequestRef.current !== requestId) return;
+            setIsLocating(false);
+            alert("위치 접근 권한이 필요합니다.");
+          },
+          { enableHighAccuracy: true, maximumAge: 0, timeout: 8000 }
+        );
+      },
+      { enableHighAccuracy: false, maximumAge: 60000, timeout: 3000 }
     );
   };
 
@@ -307,21 +439,10 @@ useEffect(() => {
     setReports([]); setReportPickMode(false); setShowReportModal(false); setReportDraft(null);
     setActiveFilters([]);
     setShowResult(false); setShowSafeTBT(false); setShowTmapTBT(false);
-    setHighlightGeneralRoute(false); setBottomOpen(false);
+    setHighlightGeneralRoute(false); setBottomOpen(false); closeMobileSearch();
   };
 
-  const Badge = ({ type }) => {
-    const s = BADGE_STYLES[type] ?? BADGE_STYLES.safe;
-    return (
-      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium"
-        style={{ backgroundColor: s.bg, border: `1px solid ${s.border}`, color: s.text }}>
-        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: s.text }} />
-        {s.label}
-      </span>
-    );
-  };
-
-  const FilterChips = () => (
+  const renderFilterChips = () => (
     <div className="flex gap-2 flex-wrap">
       {FILTERS.map(f => {
         const isOn = activeFilters.includes(f.id);
@@ -338,36 +459,6 @@ useEffect(() => {
       })}
     </div>
   );
-
-  const SegmentBar = ({ geojson }) => {
-    const seq = calcSegmentSequence(geojson);
-    if (!seq) return null;
-
-    const colorMap = { safe: COLORS.safe, caution: COLORS.caution, warning: COLORS.warning, danger: COLORS.danger };
-
-    // 범례용 레벨별 합산 (경로 순서대로 등장한 레벨만)
-    const totals = {};
-    seq.forEach(s => { totals[s.level] = (totals[s.level] || 0) + s.pct; });
-    const legend = SEGMENT_ORDER.filter(o => totals[o.key] != null);
-
-    return (
-      <div className="mt-2">
-        <div className="flex h-2 rounded-full overflow-hidden">
-          {seq.map((s, i) => (
-            <div key={i} style={{ width: `${s.pct}%`, backgroundColor: colorMap[s.level] }} />
-          ))}
-        </div>
-        <div className="flex flex-wrap gap-x-3 mt-1.5">
-          {legend.map(o => (
-            <span key={o.key} className="flex items-center gap-1 text-xs text-gray-500">
-              <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ backgroundColor: o.color }} />
-              {o.label} {Math.round(totals[o.key])}%
-            </span>
-          ))}
-        </div>
-      </div>
-    );
-  };
 
   // 관리자 감독 콘솔: URL에 ?admin=1 이면 지도 대신 관리자 페이지 렌더
   if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('admin') === '1') {
@@ -401,15 +492,19 @@ useEffect(() => {
         {/* 검색 */}
         <div className="px-6 py-4 space-y-3 border-b border-gray-100">
           <LocationSearch label="출발지" placeholder="예: 광화문역"
+            key={`desktop-start-${points.start?.lat ?? 'none'}-${points.start?.lng ?? 'none'}-${points.start?.name ?? ''}`}
+            value={points.start?.name ?? ''}
             onSelect={(p) => setPoints(prev => ({ ...prev, start: p }))} />
           <LocationSearch label="도착지" placeholder="예: 종각역"
+            key={`desktop-end-${points.end?.lat ?? 'none'}-${points.end?.lng ?? 'none'}-${points.end?.name ?? ''}`}
+            value={points.end?.name ?? ''}
             onSelect={(p) => setPoints(prev => ({ ...prev, end: p }))} />
         </div>
 
         {/* 필터 칩 */}
         <div className="px-6 py-3 border-b border-gray-100">
           <p className="text-xs text-gray-400 font-medium mb-2">지도 레이어</p>
-          <FilterChips />
+          {renderFilterChips()}
         </div>
 
         {/* 페르소나 + 시간 */}
@@ -605,15 +700,16 @@ useEffect(() => {
 
         {/* 제보하기 FAB (모바일: 현재위치 버튼 위) */}
         <button onClick={openReportModal}
-          className="md:hidden absolute bottom-[132px] right-4 z-[1000] w-12 h-12 rounded-full flex items-center justify-center shadow-lg"
+          className={`md:hidden absolute right-4 z-[1000] w-12 h-12 rounded-full flex items-center justify-center shadow-lg ${showResult ? 'bottom-[132px]' : 'bottom-24'}`}
           style={{ backgroundColor: '#F97316' }}>
           <Megaphone size={20} color="white" />
         </button>
 
         {/* 데스크탑 현재 위치 버튼 */}
         <button onClick={handleLocateMe}
+          disabled={isLocating}
           className="hidden md:flex absolute bottom-6 right-6 z-[1000] w-11 h-11 rounded-full bg-white shadow-lg items-center justify-center hover:bg-gray-50 transition-colors border border-gray-200">
-          <Navigation size={18} className="text-gray-600" />
+          <Navigation size={18} className={`text-gray-600 ${isLocating ? 'animate-spin' : ''}`} />
         </button>
 
         {/* 모바일 상단 바 */}
@@ -623,12 +719,96 @@ useEffect(() => {
               style={{ backgroundColor: COLORS.primary }}>
               <Shield size={12} color="white" />
             </div>
-            <span className="text-sm font-bold" style={{ color: COLORS.primary }}>SafeMap</span>
-            <div className="flex-1" />
-            <button onClick={handleReset}>
-              <RotateCcw size={16} className="text-gray-400" />
+            <button
+              type="button"
+              onClick={openMobileSearch}
+              className="min-w-0 flex-1 text-left"
+            >
+              {showResult && points.start && points.end ? (
+                <div className="flex items-center gap-1.5 min-w-0 text-sm font-bold text-gray-800">
+                  <span className="truncate">{points.start.name ?? '출발지'}</span>
+                  <span className="shrink-0 text-gray-400">-&gt;</span>
+                  <span className="truncate">{points.end.name ?? '도착지'}</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-sm font-semibold text-gray-500">
+                  <Search size={16} className="shrink-0" />
+                  <span>어디로 갈까요?</span>
+                </div>
+              )}
             </button>
+            {showResult && (
+              <button onClick={handleReset}
+                className="shrink-0 w-8 h-8 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center">
+                <RotateCcw size={16} />
+              </button>
+            )}
           </div>
+          {mobileSearchOpen && (
+            <div className="bg-white rounded-2xl shadow-lg p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => closeMobileSearch()}
+                  className="w-8 h-8 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center"
+                >
+                  <ArrowLeft size={16} />
+                </button>
+                <span className="text-sm font-bold text-gray-800">경로 입력</span>
+              </div>
+              <div className="space-y-2">
+                <LocationSearch label="출발지" placeholder="예: 광화문역"
+                  key={`mobile-start-${points.start?.lat ?? 'none'}-${points.start?.lng ?? 'none'}-${points.start?.name ?? ''}`}
+                  value={points.start?.name ?? ''}
+                  onSelect={(p) => setPoints(prev => ({ ...prev, start: p }))} />
+                <LocationSearch label="도착지" placeholder="예: 종각역"
+                  key={`mobile-end-${points.end?.lat ?? 'none'}-${points.end?.lng ?? 'none'}-${points.end?.name ?? ''}`}
+                  value={points.end?.name ?? ''}
+                  onSelect={(p) => setPoints(prev => ({ ...prev, end: p }))} />
+              </div>
+
+              <div className="border-t border-gray-100 pt-3">
+                <p className="text-xs text-gray-400 font-medium mb-2">사용자 유형</p>
+                <div className="flex gap-2 mb-3 overflow-x-auto pb-1">
+                  {Object.entries(PERSONA_LABEL).map(([key, val]) => (
+                    <button key={key} onClick={() => setPersona(key)}
+                      className="shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border transition-all"
+                      style={persona === key
+                        ? { backgroundColor: val.color, color: 'white', borderColor: val.color }
+                        : { backgroundColor: 'white', color: '#6B7280', borderColor: '#D1D5DB' }}>
+                      {val.text}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex justify-between text-xs text-gray-500 mb-1">
+                  <span>출발 시간</span>
+                  <span className="font-bold" style={{ color: COLORS.primary }}>{requestHour}시</span>
+                </div>
+                <input type="range" min="0" max="23" value={requestHour}
+                  onChange={(e) => setRequestHour(parseInt(e.target.value))}
+                  className="w-full accent-blue-600" />
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <button onClick={handleSearch}
+                  disabled={isLoading || !points.start || !points.end}
+                  className="flex-1 py-3 rounded-2xl text-white text-sm font-bold"
+                  style={{ backgroundColor: (!points.start || !points.end) ? '#CBD5E1' : COLORS.primary }}>
+                  {isLoading ? (
+                    <span className="flex items-center justify-center gap-1">
+                      <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      탐색 중...
+                    </span>
+                  ) : '경로 탐색'}
+                </button>
+                <button onClick={handleReset}
+                  className="px-4 py-3 rounded-2xl text-sm bg-gray-100 text-gray-500">
+                  <RotateCcw size={14} />
+                </button>
+              </div>
+            </div>
+          )}
           {/* 플로팅 필터 칩 */}
           <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
             {FILTERS.map(f => {
@@ -649,12 +829,14 @@ useEffect(() => {
 
         {/* 모바일 현재 위치 버튼 (우하단, 하단 패널 위) */}
         <button onClick={handleLocateMe}
-          className="md:hidden absolute bottom-[72px] right-4 z-[1000] w-12 h-12 rounded-full flex items-center justify-center shadow-lg border border-gray-200"
+          disabled={isLocating}
+          className={`md:hidden absolute right-4 z-[1000] w-12 h-12 rounded-full flex items-center justify-center shadow-lg border border-gray-200 ${showResult ? 'bottom-[72px]' : 'bottom-8'}`}
           style={{ backgroundColor: COLORS.primary }}>
-          <Navigation size={20} color="white" />
+          <Navigation size={20} color="white" className={isLocating ? 'animate-spin' : ''} />
         </button>
 
         {/* 모바일 하단 패널 */}
+        {showResult && routeData && (
         <div className={`md:hidden absolute bottom-0 left-0 right-0 z-[1000] bg-white rounded-t-3xl shadow-2xl transition-all duration-300 ${bottomOpen ? 'max-h-[82vh]' : 'max-h-[56px]'} overflow-hidden`}>
           <div className="flex flex-col items-center pt-3 pb-1 cursor-pointer"
             onClick={() => setBottomOpen(v => !v)}>
@@ -666,60 +848,7 @@ useEffect(() => {
 
           <div className="px-4 pb-6 overflow-y-auto max-h-[calc(82vh-48px)]">
 
-            {/* 검색 */}
-            <div className="space-y-2 mb-3">
-              <LocationSearch label="출발지" placeholder="예: 광화문역"
-                onSelect={(p) => setPoints(prev => ({ ...prev, start: p }))} />
-              <LocationSearch label="도착지" placeholder="예: 종각역"
-                onSelect={(p) => setPoints(prev => ({ ...prev, end: p }))} />
-            </div>
-
-            {/* 페르소나 + 시간 */}
-            <div className="mb-3 border-b border-gray-100 pb-3">
-              <p className="text-xs text-gray-400 font-medium mb-2">사용자 유형</p>
-              <div className="flex gap-2 mb-3 overflow-x-auto pb-1">
-                {Object.entries(PERSONA_LABEL).map(([key, val]) => (
-                  <button key={key} onClick={() => setPersona(key)}
-                    className="shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border transition-all"
-                    style={persona === key
-                      ? { backgroundColor: val.color, color: 'white', borderColor: val.color }
-                      : { backgroundColor: 'white', color: '#6B7280', borderColor: '#D1D5DB' }}>
-                    {val.text}
-                  </button>
-                ))}
-              </div>
-
-              {/* 시간 슬라이더 */}
-              <div className="flex justify-between text-xs text-gray-500 mb-1">
-                <span>출발 시간</span>
-                <span className="font-bold" style={{ color: COLORS.primary }}>{requestHour}시</span>
-              </div>
-              <input type="range" min="0" max="23" value={requestHour}
-                onChange={(e) => setRequestHour(parseInt(e.target.value))}
-                className="w-full accent-blue-600" />
-            </div>
-
-            {/* 탐색 + 초기화 버튼 */}
-            <div className="flex gap-2 mb-4">
-              <button onClick={handleSearch}
-                disabled={isLoading || !points.start || !points.end}
-                className="flex-1 py-3 rounded-2xl text-white text-sm font-bold"
-                style={{ backgroundColor: (!points.start || !points.end) ? '#CBD5E1' : COLORS.primary }}>
-                {isLoading ? (
-                  <span className="flex items-center justify-center gap-1">
-                    <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    탐색 중...
-                  </span>
-                ) : '경로 탐색'}
-              </button>
-              <button onClick={handleReset}
-                className="px-4 py-3 rounded-2xl text-sm bg-gray-100 text-gray-500">
-                <RotateCcw size={14} />
-              </button>
-            </div>
-
             {/* 모바일 결과 */}
-            {showResult && routeData && (
               <>
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-sm font-bold text-gray-800">경로를 탐색하였습니다</span>
@@ -801,9 +930,9 @@ useEffect(() => {
                   </div>
                 )}
               </>
-            )}
           </div>
         </div>
+        )}
       </div>
     </div>
   );

@@ -1,320 +1,328 @@
-# 🗺️ SafeMap_FE
+# 🗺️  SafeMap_FE
 
-공공 민원 빅데이터 기반 지역 안전 지도 및 안심 경로 서비스 - 프론트엔드
-
----
+공공 데이터와 민원 데이터를 활용해 보행자의 안전한 이동을 돕는 위험요소 기반 보행 경로 안내 프론트엔드입니다.
 
 ## 📌 프로젝트 개요
 
-시민이 체감하는 위험 요소(조도 부족, 파손 시설 등)를 반영한 안전 지도와
-사용자 유형별 맞춤형 안심 경로를 제공하는 웹 서비스입니다.
+SafeMap은 기존의 최단거리 중심 보행 경로 안내에서 벗어나, 조도 부족, CCTV 공백, 경사도, 민원, 주변 안전시설 등 다양한 위험요소를 함께 고려해 더 안전한 보행 경로를 제안하는 서비스입니다.
+
+사용자는 출발지와 도착지를 검색하거나 지도에서 직접 선택할 수 있으며, 안전 경로와 일반 최단 경로를 비교할 수 있습니다. 경로 주변의 CCTV, 경찰서, 응급시설을 지도에 표시하고, 위험 지점은 네이버 거리뷰로 실제 환경을 확인할 수 있습니다. 또한 사용자가 직접 위험 요소를 제보해 지도에 실시간으로 반영할 수 있습니다.
 
 ---
 
-## 🛠️ 기술 스택
+## 주요 기능
+
+### 1. 안전 경로 탐색
+
+- 백엔드 안전 경로 API와 Tmap 보행자 경로 API를 동시에 호출합니다.
+- 안전 경로와 일반 최단 경로를 함께 보여주어 거리, 예상 소요 시간, 위험 수준을 비교할 수 있습니다.
+- 안전 경로는 구간별 위험도에 따라 색상으로 표시됩니다.
+- 상세 경로 안내에서는 위험 분석 마커와 Tmap Turn-by-Turn 안내를 함께 제공합니다.
+
+### 2. 위험요소 시각화 강화
+
+- 위험 구간은 안전, 주의, 경고, 위험 4단계 색상으로 지도 위에 표시됩니다.
+- 급경사 구간과 도로 파손/시설물 관련 민원 지점에는 별도 경고 마커를 표시합니다.
+- 경고 마커를 클릭하면 네이버 거리뷰 모달이 열려 실제 보행 환경을 확인할 수 있습니다.
+- 거리뷰 모달에는 위험 유형, 상세 설명, 네이버 파노라마 촬영일자를 함께 표시합니다.
+- 거리뷰를 사용할 수 없는 위치는 로딩, 미제공, 오류 상태를 사용자에게 안내합니다.
+
+### 3. 실시간 주민 제보
+
+- 사용자는 `제보하기` 버튼으로 위험요소를 직접 등록할 수 있습니다.
+- 제보 위치는 현재 위치를 사용하거나 지도에서 직접 선택할 수 있습니다.
+- 제보 유형은 복수 선택이 가능하며, 체감 위험 강도는 0~8 범위로 입력합니다.
+- 기타 유형 선택 시 직접 입력한 문구가 제보 제목처럼 표시됩니다.
+- 등록 성공 후 제보 마커가 지도에 즉시 반영되고, 제보 필터가 자동 활성화됩니다.
+- 제보 마커 클릭 시 유형, 강도, 메모, 등록일을 확인하는 상세 모달이 열립니다.
+- 제보 데이터는 백엔드 `/api/reports` API와 연동됩니다.
+
+### 4. 주변 안전시설 필터
+
+- CCTV, 응급시설, 경찰서 필터를 지도 위에 표시할 수 있습니다.
+- CCTV는 백엔드 DB API에서 조회합니다.
+- 경찰서와 응급시설은 Tmap POI API를 활용하며, 검색 노이즈를 줄이기 위한 이름 필터링을 적용합니다.
+- 경로 중심 또는 출발지 기준으로 주변 시설을 조회합니다.
+
+### 5. 현재 위치 및 지도 인터랙션
+
+- 현재 위치 버튼으로 사용자의 위치를 지도에 표시하고 해당 지점으로 이동합니다.
+- 위치 정확도 확보를 위해 빠른 위치 요청 후 고정밀 위치 요청을 한 번 더 수행합니다.
+- 지도 클릭으로 출발지와 도착지를 순차 지정할 수 있습니다.
+- 클릭한 좌표는 Tmap Reverse Geocoding으로 짧은 주소명으로 변환됩니다.
+- 제보 위치 선택 모드에서는 지도 클릭이 경로 입력이 아니라 제보 위치 지정으로 동작합니다.
+
+### 6. 반응형 UI 개선
+
+- 데스크톱은 좌측 컨트롤 패널과 우측 전체 지도 구조입니다.
+- 좌측 패널은 300~600px 범위에서 드래그 리사이즈가 가능합니다.
+- 모바일은 지도 중심 화면에 상단 검색 패널, 필터 칩, 하단 경로 결과 패널을 배치했습니다.
+- 모바일 검색 패널은 브라우저 뒤로가기로 닫을 수 있도록 히스토리 상태를 관리합니다.
+- 경로 결과 카드 클릭으로 안전 경로와 일반 최단 경로의 상세 안내를 전환합니다.
+
+---
+
+## 🛠️  기술 스택
 
 | 분류 | 기술 |
-|------|------|
-| 프레임워크 | React 19 + Vite |
-| 스타일링 | Tailwind CSS v4 |
-| 지도 | Tmap JS SDK (지도 렌더링, 장소 검색, 보행자 경로) — CDN 로드 (`index.html`) |
-| 라우팅 | React Router DOM v7 |
+| --- | --- |
+| 프레임워크 | React 19, Vite |
+| 스타일 | Tailwind CSS v4 |
+| 지도 | Tmap JS SDK, Tmap REST API |
+| 거리뷰 | Naver Maps JavaScript API Panorama |
 | HTTP | Axios |
 | 아이콘 | Lucide React |
+| 라우팅 | React Router DOM |
 
 ---
 
-**구현 화면**
+## 경로 위험도 색상
 
-```
-데스크탑 레이아웃
-├── 왼쪽 패널 (400px, 드래그 리사이즈 가능)
-│   ├── 출발지/도착지 검색 (Tmap POI API 실시간 검색)
-│   ├── 지도 레이어 필터 칩 (CCTV/응급기관/경찰서)
-│   ├── 페르소나 선택 (일반/여성 안심/노약자)
-│   ├── 출발 시간 슬라이더 (0~23시)
-│   ├── 안전 경로 탐색 버튼
-│   └── 경로 결과 패널
-│       ├── 안심 경로 카드 (거리, 위험도 뱃지, AI 요약)
-│       ├── 일반 최단 경로 카드 (비교용)
-│       └── 상세 경로 안내 (TBT 텍스트)
-└── 오른쪽 지도 (Tmap 전체화면)
+| 단계 | 색상 | 의미 |
+| --- | --- | --- |
+| 안전 | `#22C55E` | 상대적으로 안전한 구간 |
+| 주의 | `#FACC15` | 일부 위험요소가 있는 구간 |
+| 경고 | `#FB923C` | 주의가 필요한 구간 |
+| 위험 | `#EF4444` | 위험도가 높은 구간 |
 
-모바일 레이아웃
-├── 상단: SafeMap 로고 바
-└── 하단: 슬라이드업 패널
-    ├── 검색/필터/페르소나/시간 설정
-    ├── 경로 탐색 버튼
-    └── 결과 + 상세 경로 안내
-```
+---
 
-**지도 기능**
+## 주요 화면 구성
 
-- 안심 경로: 위험도별 색상 실선 (초록/노랑/주황/빨강) + 흰색 외곽선
-- 일반 최단 경로: 회색 점선 (비교용)
-- 출발/도착 마커 (SVG 커스텀)
-- 위험 요소 마커 (! 아이콘 + 팝업)
-- CCTV 마커 (백엔드 DB 연동)
-- 응급기관 마커 (Tmap POI API)
-- 경찰서 마커 (Tmap POI API, 노이즈 필터링)
-- 경로 탐색 후 자동 fitBounds
-- 왼쪽 패널 드래그 리사이즈 (300px ~ 600px)
+### 데스크톱
 
-**색상 시스템**
+```text
+좌측 패널
+  - SafeMap 로고 및 서비스 설명
+  - 출발지/도착지 검색
+  - 지도 레이어 필터(CCTV, 응급시설, 경찰서)
+  - 사용자 유형 및 출발 시간 설정
+  - 안전 경로 탐색 버튼
+  - 안전 경로/일반 최단 경로 결과 카드
+  - 상세 경로 안내
 
-```
-안전:  #22C55E (초록)
-주의:  #FACC15 (노랑)
-경고:  #FB923C (주황)
-위험:  #EF4444 (빨강)
+우측 지도
+  - Tmap 지도
+  - 출발지/도착지 마커
+  - 안전 경로 및 일반 경로
+  - 주변 안전시설 마커
+  - 위험구간 경고 마커
+  - 주민 제보 마커
+  - 현재 위치 마커
+  - 제보하기/현재 위치 버튼
 ```
 
-**위험도 색상 계산 로직**
+### 모바일
 
-```
-6대 지표 가중 평균
-- security_cctv       × 0.25
-- infrastructure_led  × 0.20
-- realtime_sdot_light × 0.20 (기본값 1.0이면 제외)
-- slope               × 0.15
-- civil_complaint     × 0.10
-- floating_population × 0.10
+```text
+상단
+  - SafeMap 검색 바
+  - 경로 입력 패널
+  - 필터 칩
 
-≤ 0.35 → 초록(안전)
-≤ 0.50 → 노랑(주의)
-≤ 0.65 → 주황(경고)
-> 0.65 → 빨강(위험)
-```
+지도 영역
+  - Tmap 지도와 마커
+  - 제보하기 FAB
+  - 현재 위치 FAB
 
-**GitHub 브랜치 관리**
-
-```
-main ← 최종 배포용
-dev  ← 통합 브랜치 (현재 기준)
-feat/기능명 ← 기능별 개발 브랜치
+하단
+  - 접이식 경로 결과 패널
+  - 안전 경로/일반 최단 경로 카드
+  - 상세 경로 안내
 ```
 
 ---
 
 ## 📁 폴더 구조
-```
+
+```text
 SafeMap_FE/
-├── public/                      # 정적 파일
-├── src/
-│   ├── assets/                  # 이미지, 아이콘
-│   │   └── icons/
-│   │       ├── danger-icon.svg  # 위험 구간 경고 아이콘
-│   │       ├── icon-cctv.svg    # CCTV 필터 마커 아이콘
-│   │       ├── icon-emergency.svg # 응급기관 마커 아이콘
-│   │       └── icon-police.svg  # 경찰서 마커 아이콘
-│   │
-│   ├── components/              # 재사용 컴포넌트
-│   │   ├── common/              # 공통 컴포넌트
-│   │   │   ├── BottomSheet.jsx  # 모바일 하단 슬라이드업 패널 기반
-│   │   │   ├── SafetyBadge.jsx  # 안전/주의/경고/위험 뱃지
-│   │   │   └── SearchBar.jsx    # 검색바 공통 UI
-│   │   │
-│   │   ├── map/                 # 지도 관련 컴포넌트
-│   │   │   ├── FilterChips.jsx  # CCTV/응급/경찰서 필터 칩 버튼
-│   │   │   ├── FilterMarkers.jsx # 필터별 지도 마커 렌더링 (Leaflet용, 미사용)
-│   │   │   └── TmapView.jsx     # ★ Tmap 지도 핵심 컴포넌트
-│   │   │                        #   - Tmap SDK 초기화
-│   │   │                        #   - 출발/도착 마커 렌더링
-│   │   │                        #   - 안심경로 색상 Polyline (4색 구간별)
-│   │   │                        #   - 일반경로 점선 Polyline
-│   │   │                        #   - CCTV/응급/경찰서/위험범역 마커
-│   │   │                        #   - 위험 요소(!) 마커
-│   │   │                        #   - 지도 클릭 이벤트
-│   │   │
-│   │   ├── navigation/          # 길안내 관련 (현재 미사용 - 추후 확장용)
-│   │   │   ├── DangerModal.jsx  # 위험 구간 진입 경고 모달
-│   │   │   ├── NavBottom.jsx    # 길안내 하단 패널 (남은시간, 진행바)
-│   │   │   └── NavHeader.jsx    # 길안내 상단 헤더 (방향, 거리)
-│   │   │
-│   │   └── route/               # 경로 관련 컴포넌트
-│   │       ├── ControlPanel.jsx # 페르소나 드롭다운 + 시간 슬라이더
-│   │       ├── LocationSearch.jsx # 장소 검색 입력 + 드롭다운 결과
-│   │       │                    #   - Tmap POI API 엔터키 검색
-│   │       │                    #   - 검색 결과 클릭 시 좌표 반환
-│   │       ├── RouteCard.jsx    # 경로 카드 UI (안심/일반 경로)
-│   │       ├── RoutePanel.jsx   # 경로 결과 패널 컨테이너
-│   │       └── SafetyBar.jsx    # 안전도 비율 바 (초록~빨강)
-│   │
-│   ├── constants/               # 상수 정의
-│   │   └── mapConfig.js         # 지도 초기 설정
-│   │                            #   - 초기 중심 좌표 (서울 중심)
-│   │                            #   - 줌 레벨
-│   │
-│   ├── hooks/                   # 커스텀 훅
-│   │   ├── useLocation.js       # GPS 현재 위치 관리
-│   │   ├── useRoute.js          # 경로 상태 관리 훅
-│   │   └── useSearch.js         # 검색 상태 관리 훅
-│   │
-│   ├── pages/                   # 페이지 컴포넌트 (현재 미사용 - App.jsx가 담당)
-│   │   ├── MainPage.jsx         # 메인 지도 화면
-│   │   ├── NavigationPage.jsx   # 길안내 화면
-│   │   ├── RouteResultPage.jsx  # 경로 결과 화면
-│   │   └── SearchPage.jsx       # 검색 화면
-│   │
-│   ├── services/                # API 통신 모듈
-│   │   ├── api.js               # Axios 기본 인스턴스
-│   │   │                        #   - baseURL: VITE_API_BASE_URL
-│   │   │                        #   - timeout, headers 설정
-│   │   ├── routeService.js      # 백엔드 안심경로 API
-│   │   │                        #   - fetchSafeRoute()
-│   │   │                        #   - POST /api/routes/safe-path
-│   │   ├── searchService.js     # 장소 검색 서비스 (미사용, tmapService로 통합)
-│   │   └── tmapService.js       # ★ Tmap + 백엔드 API 통합
-│   │                            #   - searchPlaces(): 장소 검색
-│   │                            #   - fetchTmapPedestrianRoute(): 보행자 최단경로
-│   │                            #   - fetchNearbyPolice(): 반경 경찰서
-│   │                            #   - fetchNearbyCCTV(): 반경 CCTV (백엔드 DB)
-│   │                            #   - fetchNearbyEmergency(): 반경 응급기관
-│   │
-│   ├── store/                   # 전역 상태 관리
-│   │   ├── LocationContext.jsx  # 현재 GPS 위치 전역 공유
-│   │   │                        #   - navigator.geolocation watchPosition
-│   │   │                        #   - 기본값: 서울 중심 좌표
-│   │   └── RouteContext.jsx     # 경로 전역 상태 공유
-│   │                            #   - destination: 목적지 정보
-│   │                            #   - selectedRoute: 선택된 경로
-│   │                            #   - routeSegments: 경로 구간 데이터
-│   │                            #   - isNavigating: 길안내 여부
-│   │                            #   - startNavigation(), stopNavigation()
-│   │
-│   ├── styles/                  # 스타일 관련
-│   │   └── colors.js            # ★ 색상 토큰 (Figma 기반)
-│   │                            #   - COLORS: 색상 상수
-│   │                            #   - BADGE_STYLES: 뱃지 스타일
-│   │                            #   - getRouteColor(): 위험도→색상 변환
-│   │                            #   - getRouteBadgeType(): 위험도→뱃지 타입
-│   │
-│   ├── App.jsx                  # ★★ 메인 앱 컴포넌트
-│   │                            #   모든 상태와 핸들러 관리
-│   │                            #   - 출발/도착 좌표 상태
-│   │                            #   - 페르소나/시간 상태
-│   │                            #   - 필터 활성 상태
-│   │                            #   - 패널 드래그 리사이즈 (300~600px)
-│   │                            #   - handleSearch(): 경로 탐색
-│   │                            #   - handleFilterToggle(): 필터 ON/OFF
-│   │                            #   - handleReset(): 전체 초기화
-│   │                            #   - 데스크탑/모바일 레이아웃 분기
-│   ├── App.css
-│   ├── index.css                # Tailwind 기본 설정
-│   └── main.jsx                 # React 앱 진입점
-│                                #   - LocationProvider 감싸기
-│                                #   - RouteProvider 감싸기
-│
-├── .env                         # 환경변수 (gitignore)
-│                                #   - VITE_API_BASE_URL=http://localhost:8000
-│                                #   - VITE_TMAP_APP_KEY=발급키
-├── .gitignore
-├── index.html                   # Tmap SDK 스크립트 CDN 로드
-├── package.json
-├── tailwind.config.js           # Tailwind 색상 토큰 설정
-├── vite.config.js
-└── README.md
+├─ public/
+├─ src/
+│  ├─ assets/
+│  │  └─ icons/
+│  ├─ components/
+│  │  ├─ common/
+│  │  │  ├─ BottomSheet.jsx
+│  │  │  ├─ SafetyBadge.jsx
+│  │  │  └─ SearchBar.jsx
+│  │  ├─ map/
+│  │  │  ├─ FilterChips.jsx
+│  │  │  ├─ FilterMarkers.jsx
+│  │  │  ├─ ReportDetailModal.jsx
+│  │  │  ├─ ReportModal.jsx
+│  │  │  └─ TmapView.jsx
+│  │  ├─ navigation/
+│  │  │  ├─ DangerModal.jsx
+│  │  │  ├─ NavBottom.jsx
+│  │  │  ├─ NavHeader.jsx
+│  │  │  ├─ NaverPanorama.jsx
+│  │  │  └─ RoadviewModal.jsx
+│  │  └─ route/
+│  │     ├─ ControlPanel.jsx
+│  │     ├─ LocationSearch.jsx
+│  │     ├─ RouteCard.jsx
+│  │     ├─ RoutePanel.jsx
+│  │     └─ SafetyBar.jsx
+│  ├─ constants/
+│  │  └─ mapConfig.js
+│  ├─ hooks/
+│  │  ├─ useLocation.js
+│  │  ├─ useRoute.js
+│  │  └─ useSearch.js
+│  ├─ pages/
+│  ├─ services/
+│  │  ├─ api.js
+│  │  ├─ reportService.js
+│  │  ├─ routeService.js
+│  │  ├─ searchService.js
+│  │  └─ tmapService.js
+│  ├─ store/
+│  ├─ styles/
+│  │  └─ colors.js
+│  ├─ App.jsx
+│  ├─ index.css
+│  └─ main.jsx
+├─ index.html
+├─ package.json
+├─ tailwind.config.js
+└─ vite.config.js
 ```
-**핵심 파일 3개 요약**
-
-```
-App.jsx
-모든 상태(출발지, 도착지, 경로, 필터 등)와
-핸들러를 관리하는 최상위 컴포넌트.
-데스크탑/모바일 레이아웃을 하나의 파일에서 분기 처리.
-패널 드래그 리사이즈 기능 포함.
-
-TmapView.jsx
-Tmap SDK를 직접 제어하는 지도 컴포넌트.
-props로 받은 좌표/경로/마커 데이터를
-Tmap API로 렌더링. React와 독립적으로 동작.
-
-tmapService.js
-Tmap API와 백엔드 API 호출을 담당.
-장소 검색, 보행자 경로, 주변 시설
-데이터를 가져오는 모든 함수 모음.
-```
-### 현재 실제로 사용 중인 파일 vs 미사용
-
-```
-✅ 실제 사용 중
-App.jsx, TmapView.jsx, tmapService.js,
-routeService.js, ControlPanel.jsx,
-LocationSearch.jsx, RouteCard.jsx, RoutePanel.jsx,
-SafetyBar.jsx, SafetyBadge.jsx, BottomSheet.jsx,
-FilterChips.jsx, colors.js,
-LocationContext.jsx, RouteContext.jsx
-
-⚠️ 초기 구현 후 현재 미사용
-(추후 기능 확장 시 활용 가능)
-pages/MainPage.jsx
-pages/NavigationPage.jsx
-pages/RouteResultPage.jsx
-pages/SearchPage.jsx
-components/navigation/DangerModal.jsx
-components/navigation/NavBottom.jsx
-components/navigation/NavHeader.jsx
-components/map/FilterMarkers.jsx (Leaflet용)
-services/searchService.js
-```
-
 
 ---
 
+## 핵심 파일 설명
 
-## ⚙️ 로컬 실행 방법
+### `src/App.jsx`
 
-### 1. 레포지토리 클론
+- 앱의 최상위 상태와 이벤트 핸들러를 관리합니다.
+- 출발지/도착지, 경로 데이터, 필터 상태, 주변 시설, 현재 위치, 모바일 검색 패널, 제보 모달 상태를 관리합니다.
+- 안전 경로 API와 Tmap 일반 보행 경로 API를 병렬 호출합니다.
+- 제보 등록 후 지도 마커와 필터 상태를 즉시 갱신합니다.
+- 데스크톱/모바일 레이아웃과 경로 결과 패널을 렌더링합니다.
+
+### `src/components/map/TmapView.jsx`
+
+- Tmap JS SDK를 직접 제어하는 지도 컴포넌트입니다.
+- 출발지/도착지 마커, 안전 경로, 일반 최단 경로, 시설 마커, 위험구간, 제보 마커, 현재 위치 마커를 렌더링합니다.
+- 안전 경로는 GeoJSON FeatureCollection의 `risk_level`에 따라 구간별 색상 Polyline으로 표시합니다.
+- 급경사 구간과 민원 기반 위험 지점에 경고 마커를 만들고, 클릭 시 네이버 거리뷰 모달을 엽니다.
+- 제보 위치 선택 모드에서는 지도 클릭을 제보 위치 확정 이벤트로 처리합니다.
+
+### `src/components/navigation/NaverPanorama.jsx`
+
+- 좌표를 받아 네이버 지도 Panorama 객체를 생성합니다.
+- 거리뷰 로딩, 정상 표시, 미제공, 오류 상태를 처리합니다.
+- 파노라마 위치 정보에서 촬영일자를 추출해 상위 모달에 전달합니다.
+
+### `src/components/navigation/RoadviewModal.jsx`
+
+- 위험 지점 상세 정보와 네이버 거리뷰를 표시하는 모달입니다.
+- 위험 유형, 설명, 거리뷰 촬영일자를 사용자에게 제공합니다.
+
+### `src/components/map/ReportModal.jsx`
+
+- 주민 위험 제보 작성 모달입니다.
+- 제보 위치, 유형, 체감 위험 강도, 메모를 입력받습니다.
+- 현재 위치 사용과 지도에서 직접 선택 기능을 제공합니다.
+- `createReport()` 호출 후 등록된 제보를 상위 컴포넌트에 반환합니다.
+
+### `src/components/map/ReportDetailModal.jsx`
+
+- 제보 마커 클릭 시 제보 상세 내용을 표시합니다.
+- 제보 유형, 직접 입력 제목, 체감 위험 강도, 메모, 등록일을 보여줍니다.
+
+### `src/services/reportService.js`
+
+- 주민 제보 API 클라이언트입니다.
+- `POST /api/reports`: 제보 등록
+- `GET /api/reports`: 좌표와 반경 기준 제보 조회
+- 프론트엔드 제보 유형 상수를 관리합니다.
+
+### `src/services/tmapService.js`
+
+- Tmap POI 검색, 역지오코딩, 보행자 경로 탐색을 담당합니다.
+- 주변 경찰서, CCTV, 응급시설 조회를 제공합니다.
+- CCTV는 백엔드 API(`/api/map/cctv`)를 통해 조회하고, 경찰서/응급시설은 Tmap POI API를 사용합니다.
+
+### `src/components/route/LocationSearch.jsx`
+
+- 장소 검색 입력 컴포넌트입니다.
+- Enter 입력 시 Tmap POI API로 장소를 검색하고, 결과 선택 시 좌표와 장소명을 부모 컴포넌트에 전달합니다.
+
+### `index.html`
+
+- Tmap JS SDK와 네이버 지도 Panorama API를 CDN으로 로드합니다.
+- 환경변수 기반으로 `VITE_TMAP_APP_KEY`, `VITE_NAVER_MAP_KEY`를 주입합니다.
+
+---
+
+## API 연동
+
+### 백엔드 API
+
+| 기능 | 메서드 | 경로 | 설명 |
+| --- | --- | --- | --- |
+| 안전 경로 탐색 | `POST` | `/api/routes/safe-path` | 사용자 유형과 시간대를 반영한 안전 경로 요청 |
+| CCTV 조회 | `GET` | `/api/map/cctv` | 좌표 주변 CCTV 조회 |
+| 제보 등록 | `POST` | `/api/reports` | 사용자 위험 제보 등록 |
+| 제보 조회 | `GET` | `/api/reports` | 좌표 주변 제보 목록 조회 |
+
+### 외부 API
+
+| API | 사용 목적 |
+| --- | --- |
+| Tmap JS SDK | 지도 렌더링, 마커, Polyline, 지도 이벤트 |
+| Tmap POI API | 장소 검색, 경찰서/응급시설 검색 |
+| Tmap Pedestrian Route API | 일반 최단 보행 경로와 TBT 안내 |
+| Tmap Reverse Geocoding API | 지도 클릭 좌표를 주소명으로 변환 |
+| Naver Maps Panorama API | 위험 지점 실제 거리뷰 확인 |
+
+---
+
+## 환경 변수
+
+프로젝트 루트에 `.env` 파일을 생성합니다.
 
 ```bash
-git clone https://github.com/shinhyunwooo/SafeMap_FE.git
-cd SafeMap_FE
+VITE_API_BASE_URL=http://localhost:8000
+VITE_TMAP_APP_KEY=발급받은_Tmap_App_Key
+VITE_NAVER_MAP_KEY=발급받은_Naver_Maps_Client_Key
 ```
 
-### 2. 패키지 설치
+> Tmap SDK와 네이버 지도 SDK는 `index.html`에서 CDN으로 로드됩니다.
+
+---
+
+## ⚙️ 로컬 실행
 
 ```bash
 npm install
-```
-
-### 3. 환경변수 설정 (.env 파일 생성)
-```bash
-VITE_API_BASE_URL=http://localhost:8000
-VITE_TMAP_APP_KEY=팀_공용_앱키_입력
-```
-
-### 4. 개발 서버 실행
-
-```bash
 npm run dev
 ```
 
-브라우저에서 `http://localhost:5173` 접속
-> **주의:** Tmap SDK는 CDN으로 로드됩니다 (`index.html`). npm 패키지 아님.
+브라우저에서 Vite 개발 서버 주소로 접속합니다.
+
+```text
+http://localhost:5173
+```
 
 ---
 
-## 🌿 브랜치 전략
-main        ← 최종 배포 브랜치
-dev         ← 개발 통합 브랜치
-feat/기능명  ← 기능별 개발 브랜치
-
-### 작업 순서
+## 빌드 및 검사
 
 ```bash
-# 1. dev 브랜치에서 기능 브랜치 생성
-git checkout dev
-git pull origin dev
-git checkout -b feat/기능명
+npm run build
+npm run lint
+```
 
-# 2. 작업 후 커밋
-git add .
-git commit -m "feat: 기능 설명"
+## 🌿 Git 브랜치 전략
 
-# 3. 원격에 push
-git push origin feat/기능명
-
-# 4. GitHub에서 dev로 Pull Request 생성
+```text
+main        최종 배포 브랜치
+dev         개발 통합 브랜치
+feat/*      기능 개발 브랜치
+style/*     UI 개선 브랜치
 ```
 
 ---
@@ -322,28 +330,18 @@ git push origin feat/기능명
 ## 💬 커밋 메시지 규칙
 
 | 태그 | 설명 |
-|------|------|
+| --- | --- |
 | `feat` | 새로운 기능 추가 |
 | `fix` | 버그 수정 |
-| `style` | UI 스타일 변경 |
-| `refactor` | 코드 리팩토링 |
-| `chore` | 설정, 패키지 변경 |
+| `style` | UI/스타일 변경 |
+| `refactor` | 코드 구조 개선 |
+| `chore` | 설정, 패키지, 기타 작업 |
 | `docs` | 문서 수정 |
 
-예시: `feat: 메인 지도 화면 구현`
+예시:
 
----
-
-## 프론트엔드 환경 변수(env) 설정 및 Tmap API 연동 가이드
-
-Tmap API 기반 경로 탐색 및 Turn-by-Turn(TBT) 기능이 업데이트되었습니다. 로컬 환경에서 정상 작동을 위해 아래 설정을 반드시 완료해 주세요.
-
-### 1. 환경 변수 파일 생성
-프로젝트 최상단 루트 폴더(src 폴더 바깥)에 `.env` 파일을 생성하고 팀 공용 API 키를 입력합니다.
-
-VITE_TMAP_APP_KEY=공유된_팀_공용_앱키_입력
-
-### 2. 주요 아키텍처 및 UI 변경 사항
-- **TmapView 컴포넌트 추가:** 기존 Leaflet 기반 SafeMap 및 RouteLayer 컴포넌트가 Tmap SDK 기반의 TmapView 컴포넌트로 전면 대체되었습니다.
-- **TBT 경로 안내 레이아웃 추가:** 경로 탐색 완료 시 지도 하단에 네비게이션용 상세 텍스트 안내(Turn-by-Turn) UI가 추가되었습니다.
-- **실시간 시간대 연동:** 사용자의 현재 접속 시간을 기반으로 백엔드 조도 및 위험도 가중치 알고리즘을 동적으로 요청합니다.
+```text
+feat: 주민 위험 제보 기능 추가
+style: 모바일 검색 패널 위치 개선
+docs: README 최신 기능 반영
+```
