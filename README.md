@@ -8,6 +8,8 @@ SafeMap은 기존의 최단거리 중심 보행 경로 안내에서 벗어나, �
 
 사용자는 출발지와 도착지를 검색하거나 지도에서 직접 선택할 수 있으며, 안전 경로와 일반 최단 경로를 비교할 수 있습니다. 경로 주변의 CCTV, 경찰서, 응급시설을 지도에 표시하고, 위험 지점은 네이버 거리뷰로 실제 환경을 확인할 수 있습니다. 또한 사용자가 직접 위험 요소를 제보해 지도에 실시간으로 반영할 수 있습니다.
 
+관리자는 별도의 제보 감독 콘솔에서 주민 제보를 검토하고 노출 여부를 관리할 수 있습니다. 서비스는 PWA로 구성되어 모바일과 데스크톱에서 설치형 앱처럼 실행할 수 있습니다.
+
 ---
 
 ## 주요 기능
@@ -60,6 +62,24 @@ SafeMap은 기존의 최단거리 중심 보행 경로 안내에서 벗어나, �
 - 모바일 검색 패널은 브라우저 뒤로가기로 닫을 수 있도록 히스토리 상태를 관리합니다.
 - 경로 결과 카드 클릭으로 안전 경로와 일반 최단 경로의 상세 안내를 전환합니다.
 
+### 7. 관리자 제보 감독
+
+- `?admin=1` 쿼리로 제보 감독 콘솔에 진입합니다.
+- 관리자 키는 `X-Admin-Key` 요청 헤더를 통해 백엔드에서 검증합니다.
+- 전체 제보와 노출/숨김 건수를 확인할 수 있습니다.
+- 부적절한 제보를 숨기거나 다시 노출할 수 있습니다.
+- 제보 영구 삭제와 목록 새로고침을 지원합니다.
+- 인증된 관리자 키는 자동 로그인을 위해 브라우저 `localStorage`에 저장되며 로그아웃 시 삭제됩니다.
+
+### 8. PWA
+
+- 웹 앱을 홈 화면이나 데스크톱에 설치해 독립 실행형 앱으로 사용할 수 있습니다.
+- 새 버전 배포 시 서비스 워커가 자동으로 업데이트됩니다.
+- JS, CSS, HTML, 이미지, 아이콘, 폰트 등 앱셸 정적 자산을 사전 캐싱합니다.
+- 일부 지도 이미지 타일은 `StaleWhileRevalidate` 전략으로 런타임 캐싱합니다.
+- SPA 경로 요청은 오프라인 상태에서 `index.html`로 폴백합니다.
+- 개발 서버에서는 PWA가 비활성화되며, 빌드 후 `preview` 또는 배포 환경에서 확인할 수 있습니다.
+
 ---
 
 ## 🛠️  기술 스택
@@ -70,6 +90,7 @@ SafeMap은 기존의 최단거리 중심 보행 경로 안내에서 벗어나, �
 | 스타일 | Tailwind CSS v4 |
 | 지도 | Tmap JS SDK, Tmap REST API |
 | 거리뷰 | Naver Maps JavaScript API Panorama |
+| PWA | Vite PWA Plugin, Workbox |
 | HTTP | Axios |
 | 아이콘 | Lucide React |
 | 라우팅 | React Router DOM |
@@ -110,6 +131,12 @@ SafeMap은 기존의 최단거리 중심 보행 경로 안내에서 벗어나, �
   - 주민 제보 마커
   - 현재 위치 마커
   - 제보하기/현재 위치 버튼
+
+관리자 제보 감독
+  - 관리자 키 인증
+  - 전체/노출/숨김 제보 통계
+  - 제보 숨김/복구
+  - 제보 영구 삭제
 ```
 
 ### 모바일
@@ -142,6 +169,8 @@ SafeMap_FE/
 │  ├─ assets/
 │  │  └─ icons/
 │  ├─ components/
+│  │  ├─ admin/
+│  │  │  └─ AdminReportsPage.jsx
 │  │  ├─ common/
 │  │  │  ├─ BottomSheet.jsx
 │  │  │  ├─ SafetyBadge.jsx
@@ -172,6 +201,7 @@ SafeMap_FE/
 │  │  └─ useSearch.js
 │  ├─ pages/
 │  ├─ services/
+│  │  ├─ adminService.js
 │  │  ├─ api.js
 │  │  ├─ reportService.js
 │  │  ├─ routeService.js
@@ -185,6 +215,7 @@ SafeMap_FE/
 │  └─ main.jsx
 ├─ index.html
 ├─ package.json
+├─ package-lock.json
 ├─ tailwind.config.js
 └─ vite.config.js
 ```
@@ -199,7 +230,20 @@ SafeMap_FE/
 - 출발지/도착지, 경로 데이터, 필터 상태, 주변 시설, 현재 위치, 모바일 검색 패널, 제보 모달 상태를 관리합니다.
 - 안전 경로 API와 Tmap 일반 보행 경로 API를 병렬 호출합니다.
 - 제보 등록 후 지도 마커와 필터 상태를 즉시 갱신합니다.
+- URL의 `admin=1` 값을 확인해 일반 지도 화면과 관리자 콘솔을 분기합니다.
 - 데스크톱/모바일 레이아웃과 경로 결과 패널을 렌더링합니다.
+
+### `src/components/admin/AdminReportsPage.jsx`
+
+- 관리자 키 인증과 제보 감독 화면을 제공합니다.
+- 숨김 제보를 포함한 전체 목록과 노출 상태별 통계를 표시합니다.
+- 제보 숨김, 복구, 영구 삭제, 새로고침, 로그아웃을 처리합니다.
+
+### `src/services/adminService.js`
+
+- 관리자 전용 제보 API 클라이언트입니다.
+- 모든 관리자 요청에 `X-Admin-Key` 헤더를 전달합니다.
+- 전체 제보 조회, 노출 상태 변경, 영구 삭제 요청을 담당합니다.
 
 ### `src/components/map/TmapView.jsx`
 
@@ -254,6 +298,12 @@ SafeMap_FE/
 
 - Tmap JS SDK와 네이버 지도 Panorama API를 CDN으로 로드합니다.
 - 환경변수 기반으로 `VITE_TMAP_APP_KEY`, `VITE_NAVER_MAP_KEY`를 주입합니다.
+- PWA 테마 색상, Apple 모바일 웹 앱, 홈 화면 아이콘 관련 메타 정보를 정의합니다.
+
+### `vite.config.js`
+
+- `vite-plugin-pwa`를 통해 웹 앱 매니페스트와 서비스 워커를 생성합니다.
+- 앱셸 사전 캐싱, 지도 이미지 런타임 캐싱, SPA 오프라인 폴백을 설정합니다.
 
 ---
 
@@ -267,6 +317,9 @@ SafeMap_FE/
 | CCTV 조회 | `GET` | `/api/map/cctv` | 좌표 주변 CCTV 조회 |
 | 제보 등록 | `POST` | `/api/reports` | 사용자 위험 제보 등록 |
 | 제보 조회 | `GET` | `/api/reports` | 좌표 주변 제보 목록 조회 |
+| 관리자 제보 조회 | `GET` | `/api/admin/reports` | 숨김 제보를 포함한 전체 목록 조회 |
+| 제보 노출 상태 변경 | `PATCH` | `/api/admin/reports/:id` | `visible` 또는 `hidden` 상태로 변경 |
+| 제보 영구 삭제 | `DELETE` | `/api/admin/reports/:id` | 선택한 제보 영구 삭제 |
 
 ### 외부 API
 
@@ -307,6 +360,12 @@ npm run dev
 http://localhost:5173
 ```
 
+관리자 콘솔:
+
+```text
+http://localhost:5173/?admin=1
+```
+
 ---
 
 ## 빌드 및 검사
@@ -314,6 +373,13 @@ http://localhost:5173
 ```bash
 npm run build
 npm run lint
+```
+
+PWA 설치와 서비스 워커 동작은 개발 서버가 아닌 빌드 결과에서 확인합니다.
+
+```bash
+npm run build
+npm run preview
 ```
 
 ## 🌿 Git 브랜치 전략
